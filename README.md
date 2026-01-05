@@ -336,7 +336,519 @@ ENSG00000000003 TSPAN6  ovary   c-4     vascular endothelial cells      164     
 ```
 # 2) Filtering combined dataset
 
-Then I wanted to filter data that are not reliable. For this I used filter_rows.py
+Then I wanted to filter data that are not reliable. 
+
+Human Protein atlas explains their filtration procedure as following
+
+"Excluded from the cross-dataset aggregation and subsequent gene classification were clusters with mixed cell types, clusters with low cell type annotation confidence, and cell types within a tissue that comprised less than 30 cells or their aggregated profile contained fewer than 10,000 detected genes. We retained, however, a small number of clusters below the 30-cell threshold, provided they demonstrated more than 10,000 detected genes, to preserve representation of rare cell types. A total of 161 clusters out of 1175 clusters were excluded from the cross dataset integration and downstream analysis."
+
+Following script tries to replicate it 
+
+filter_integration_long.py
+```py
+
+#!/usr/bin/env python3
+"""
+Filter long-format expression data by cluster-level rules:
+  - Drop clusters labeled as 'mixed' (substring match in Cell type; only if --drop-mixed).
+  - Drop clusters with cells < min_cells OR detected genes < min_genes.
+  - Exception: retain clusters below min_cells if genes >= min_genes (rare-cell preservation).
+  - Reliability filter: keep or drop clusters based on values from an explicitly chosen column.
+
+Detected genes modes:
+  - compute: count unique genes per cluster with detection metric above a threshold (e.g., nCPM > 0).
+  - column: use a genes count column present in the input file (per-row; aggregated per cluster).
+  - map:   join a separate cluster-level mapping file that has the genes count.
+
+QA outputs:
+  - --write-summary: per-cluster table (mixed, cells, genes, reliability, keep).
+  - --write-dropped: dropped clusters with explicit reasons.
+
+Examples:
+  python filter_integration_long.py \
+    --input combined_expression_data_filtered.tsv \
+    --output integrated_filtered.tsv \
+    --cluster-cols Tissue Cluster \
+    --cell-type-column "Cell type" \
+    --count-column "Cell count" \
+    --genes-mode compute \
+    --detect-column nCPM --detect-operator '>' --detect-threshold 0 \
+    --min-cells 30 --min-genes 10000 \
+    --drop-mixed --ignore-case --require-included \
+    --reliability-column "Annotation reliability" \
+    --keep-reliability-values high "medium high" "medium low" \
+    --write-summary cluster_summary.tsv \
+    --write-dropped dropped_clusters.tsv \
+    --verbose
+"""
+
+import argparse
+import sys
+import pandas as pd
+
+
+def parse_args():
+    p = argparse.ArgumentParser(
+        description="Filter long-format per-gene data using cluster-level rules (mixed label, min cells, min genes, reliability), and export dropped clusters with reasons."
+    )
+    # I/O and format
+    p.add_argument("--input", "-i", required=True, help="Path to input TSV/CSV file (long-format per gene per cluster).")
+    p.add_argument("--output", "-o", required=True, help="Path to output file (filtered).")
+    p.add_argument("--delimiter", "-d", default="\t", help=r"Field delimiter (default: tab '\t').")
+    p.add_argument("--encoding", default="utf-8", help="File encoding (default: utf-8).")
+    p.add_argument("--quotechar", default='"', help='Quote character (default: ").')
+    p.add_argument("--escapechar", default=None, help="Escape character (optional).")
+    p.add_argument("--verbose", "-v", action="store_true", help="Print summary details.")
+    p.add_argument("--write-summary", help="Optional path to write a cluster-level summary table (CSV/TSV).")
+    p.add_argument("--write-dropped", help="Optional path to write a list of dropped clusters with reasons (CSV/TSV).")
+
+    # Columns in long-format file
+    p.add_argument("--cluster-cols", nargs="+", default=["Tissue", "Cluster"],
+                   help="Column(s) that identify a cluster (default: Tissue Cluster).")
+    p.add_argument("--cell-type-column", default="Cell type", help="Column with cell type labels.")
+    p.add_argument("--count-column", default="Cell count", help="Column with per-cluster cell count (repeated per row).")
+    p.add_argument("--gene-id-column", default="Gene", help="Column with gene identifiers (used when computing detected genes).")
+
+    # Mixed cluster filtering
+    p.add_argument("--drop-mixed", action="store_true", help="Drop clusters whose cell type contains the mixed token.")
+    p.add_argument("--mixed-token", default="mixed", help="Token indicating mixed cell types (default: 'mixed').")
+    p.add_argument("--ignore-case", action="store_true", help="Case-insensitive matching for mixed token and reliability values.")
+    p.add_argument("--require-included", action="store_true",
+                   help="Additionally require Included in aggregation == 'yes' if the column exists (optional).")
+
+    # Thresholds & rare-cell exception
+    p.add_argument("--min-cells", type=int, default=30, help="Minimum cells per cluster (default: 30).")
+    p.add_argument("--min-genes", type=int, default=10000, help="Minimum detected genes per cluster (default: 10000).")
+    p.add_argument("--disable-rare-exception", action="store_true",
+                   help="Disable rare-cell exception (keep <min cells if genes >= min). Enabled by default.")
+
+    # Reliability filtering (cluster-level)
+    p.add_argument("--reliability-column", "-R", default="Annotation reliability",
+                   help="Column to use for reliability filtering (default: 'Annotation reliability').")
+    rel_group = p.add_mutually_exclusive_group()
+    rel_group.add_argument("--keep-reliability-values", nargs="+",
+                           help="Keep clusters whose reliability equals any of these values (e.g., 'high', 'medium', 'medium high', 'medium low').")
+    rel_group.add_argument("--drop-reliability-values", nargs="+",
+                           help="Drop clusters whose reliability equals any of these values (e.g., 'low').")
+    p.add_argument("--reliability-na-action", choices=["drop", "keep"], default="drop",
+                   help="How to treat missing reliability values at cluster level (default: drop).")
+
+    # Detected genes modes
+    p.add_argument("--genes-mode", choices=["compute", "column", "map"], default="compute",
+                   help="How to obtain detected genes per cluster.")
+    # compute mode
+    p.add_argument("--detect-column", default="nCPM", help="Column used to decide if a gene is detected (default: 'nCPM').")
+    p.add_argument("--detect-operator", choices=[">", ">="], default=">",
+                   help="Operator for detection threshold (default: '>').")
+    p.add_argument("--detect-threshold", type=float, default=0.0, help="Detection threshold (default: 0.0).")
+    # column mode
+    p.add_argument("--genes-count-column", help="Column in input that contains per-cluster detected genes (same value per cluster).")
+    # map mode
+    p.add_argument("--genes-mapping-file", help="Path to a separate mapping file with detected genes per cluster.")
+    p.add_argument("--map-delimiter", default="\t", help="Delimiter for mapping file (default: tab).")
+    p.add_argument("--map-encoding", default="utf-8", help="Encoding for mapping file (default: utf-8).")
+    p.add_argument("--map-genes-count-column", help="Column in mapping file with detected genes per cluster.")
+
+    return p.parse_args()
+
+
+def _first_valid_str(series, ignore_case=False):
+    """Return first non-NA string from series, normalized by stripping spaces and optional lowercasing."""
+    s = series.astype("string").dropna()
+    if s.size == 0:
+        return pd.NA
+    val = s.iloc[0]
+    if pd.isna(val):
+        return pd.NA
+    norm = str(val).strip()
+    return norm.lower() if ignore_case else norm
+
+
+def _normalize_values(values, ignore_case=False):
+    """Normalize a list of CLI values: strip spaces and optional lowercasing."""
+    if not values:
+        return []
+    out = []
+    for v in values:
+        if v is None:
+            continue
+        t = str(v).strip()
+        out.append(t.lower() if ignore_case else t)
+    return out
+
+
+def main():
+    args = parse_args()
+
+    # Read long-format input
+    try:
+        df = pd.read_csv(
+            args.input,
+            sep=args.delimiter,
+            encoding=args.encoding,
+            quotechar=args.quotechar,
+            escapechar=args.escapechar,
+            dtype="object",
+            na_filter=True
+        )
+    except Exception as e:
+        print(f"ERROR: Failed to read input file '{args.input}': {e}", file=sys.stderr)
+        sys.exit(1)
+
+    # Optional: filter Included in aggregation == yes
+    if args.require_included and ("Included in aggregation" in df.columns):
+        df = df[df["Included in aggregation"].astype("string").str.lower().str.strip() == "yes"]
+
+    # Validate required columns
+    missing_cols = [c for c in args.cluster_cols if c not in df.columns]
+    for c in [args.cell_type_column, args.count_column]:
+        if c not in df.columns:
+            missing_cols.append(c)
+    if args.genes_mode == "compute":
+        if args.gene_id_column not in df.columns:
+            missing_cols.append(args.gene_id_column)
+        if args.detect_column not in df.columns:
+            missing_cols.append(args.detect_column)
+    if (args.keep_reliability_values or args.drop_reliability_values) and (args.reliability_column not in df.columns):
+        missing_cols.append(args.reliability_column)
+
+    if missing_cols:
+        print("ERROR: Missing required column(s): " + ", ".join(sorted(set(missing_cols))), file=sys.stderr)
+        print("Available columns:\n  - " + "\n  - ".join(df.columns), file=sys.stderr)
+        sys.exit(2)
+
+    # --- helper columns ---
+    df["_cell_type_str"] = df[args.cell_type_column].astype("string")
+    df["_is_mixed"] = df["_cell_type_str"].str.contains(
+        args.mixed_token, case=not args.ignore_case, na=False, regex=False
+    )
+
+    # Group by cluster keys
+    grp = df.groupby(args.cluster_cols, dropna=False)
+
+    # Mixed flag per cluster
+    mixed_flag = grp["_is_mixed"].any()
+    effective_mixed_flag = mixed_flag if args.drop_mixed else mixed_flag.copy().astype(bool)
+    if not args.drop_mixed:
+        effective_mixed_flag[:] = False
+
+    # Cell count per cluster: take first valid numeric value within each cluster
+    cell_count_per_cluster = grp[args.count_column].agg(
+        lambda s: pd.to_numeric(s, errors="coerce").dropna().iloc[0] if s.dropna().size > 0 else pd.NA
+    )
+
+    # Reliability per cluster (first non-NA, normalized)
+    if args.reliability_column in df.columns:
+        reliability_per_cluster = grp[args.reliability_column].agg(
+            lambda s: _first_valid_str(s, ignore_case=args.ignore_case)
+        )
+    else:
+        reliability_per_cluster = pd.Series(pd.NA, index=grp.size().index)
+
+    # Detected genes per cluster
+    if args.genes_mode == "compute":
+        detect_num = pd.to_numeric(df[args.detect_column], errors="coerce")
+        if args.detect_operator == ">=":
+            df["_detected"] = detect_num >= args.detect_threshold
+        else:
+            df["_detected"] = detect_num > args.detect_threshold
+
+        detected_rows = df[df["_detected"].fillna(False)]
+        genes_count_per_cluster = detected_rows.groupby(args.cluster_cols, dropna=False)[args.gene_id_column].nunique()
+
+    elif args.genes_mode == "column":
+        if not args.genes_count_column or args.genes_count_column not in df.columns:
+            print("ERROR: --genes-count-column must be provided and exist in input for genes-mode=column.", file=sys.stderr)
+            sys.exit(2)
+        genes_count_per_cluster = grp[args.genes_count_column].agg(
+            lambda s: pd.to_numeric(s, errors="coerce").dropna().iloc[0] if s.dropna().size > 0 else pd.NA
+        )
+
+    else:  # map mode
+        if not args.genes_mapping_file or not args.map_genes_count_column:
+            print("ERROR: Provide --genes-mapping-file and --map-genes-count-column for genes-mode=map.", file=sys.stderr)
+            sys.exit(2)
+        try:
+            map_df = pd.read_csv(
+                args.genes_mapping_file,
+                sep=args.map_delimiter,
+                encoding=args.map_encoding,
+                dtype="object",
+                na_filter=True
+            )
+        except Exception as e:
+            print(f"ERROR: Failed to read mapping file '{args.genes_mapping_file}': {e}", file=sys.stderr)
+            sys.exit(1)
+
+        # Ensure cluster keys exist in mapping
+        missing_map_keys = [c for c in args.cluster_cols if c not in map_df.columns]
+        if missing_map_keys:
+            print("ERROR: Mapping file missing cluster key column(s): " + ", ".join(missing_map_keys), file=sys.stderr)
+            print("Mapping columns:\n  - " + "\n  - ".join(map_df.columns), file=sys.stderr)
+            sys.exit(2)
+
+        if args.map_genes_count_column not in map_df.columns:
+            print(f"ERROR: Mapping file missing genes count column '{args.map_genes_count_column}'.", file=sys.stderr)
+            sys.exit(2)
+
+        map_df[args.map_genes_count_column] = pd.to_numeric(map_df[args.map_genes_count_column], errors="coerce")
+        genes_count_per_cluster = map_df.set_index(args.cluster_cols)[args.map_genes_count_column]
+
+    # Align all series to a common MultiIndex covering all clusters in the input
+    cluster_index = grp.size().index
+    summary = pd.DataFrame({
+        "mixed_flag": mixed_flag.reindex(cluster_index, fill_value=False).astype(bool),
+        "effective_mixed_flag": effective_mixed_flag.reindex(cluster_index, fill_value=False).astype(bool),
+        "cell_count": pd.to_numeric(cell_count_per_cluster.reindex(cluster_index), errors="coerce"),
+        "genes_count": pd.to_numeric(genes_count_per_cluster.reindex(cluster_index), errors="coerce"),
+        "reliability": reliability_per_cluster.reindex(cluster_index)
+    })
+    summary.index.names = args.cluster_cols
+
+    # Apply thresholds (treat NA as failing/too few unless exception applies)
+    too_few_cells = (summary["cell_count"] < args.min_cells)
+    too_few_genes = (summary["genes_count"] < args.min_genes)
+    too_few_cells_fill = too_few_cells.fillna(True)
+    too_few_genes_fill = too_few_genes.fillna(True)
+
+    # Rare-cell exception: keep clusters with <min cells but >=min genes
+    rare_exception_on = not args.disable_rare_exception
+    rare_keep = (too_few_cells_fill) & (~too_few_genes_fill) if rare_exception_on else pd.Series(False, index=summary.index)
+
+    # Reliability filter
+    reliability_ok = pd.Series(True, index=summary.index)
+    if args.keep_reliability_values or args.drop_reliability_values:
+        allowed = _normalize_values(args.keep_reliability_values, ignore_case=args.ignore_case) if args.keep_reliability_values else None
+        disallowed = _normalize_values(args.drop_reliability_values, ignore_case=args.ignore_case) if args.drop_reliability_values else None
+
+        # Normalize summary reliability values (strip + optional lower)
+        rel_norm = summary["reliability"].astype("string").str.strip()
+        if args.ignore_case:
+            rel_norm = rel_norm.str.lower()
+
+        if allowed is not None:
+            reliability_ok = rel_norm.isin(allowed)
+        else:
+            reliability_ok = ~rel_norm.isin(disallowed)
+
+        # NA policy
+        reliability_ok = reliability_ok.fillna(True if args.reliability_na_action == "keep" else False)
+
+    # Final keep decision
+    keep_clusters = reliability_ok & (~summary["effective_mixed_flag"]) & (
+        ((~too_few_cells_fill) & (~too_few_genes_fill)) | rare_keep
+    )
+    summary["keep"] = keep_clusters
+
+    # For QA: explicit reasons for dropped clusters
+    dropped = summary[~summary["keep"]].copy()
+    if not dropped.empty:
+        dropped["missing_cells"] = summary["cell_count"].isna().reindex(dropped.index)
+        dropped["missing_genes"] = summary["genes_count"].isna().reindex(dropped.index)
+        dropped["low_cells"] = too_few_cells.reindex(dropped.index).fillna(False)
+        dropped["low_genes"] = too_few_genes.reindex(dropped.index).fillna(False)
+        dropped["mixed"] = summary["effective_mixed_flag"].reindex(dropped.index).fillna(False)
+        dropped["missing_reliability"] = dropped["reliability"].isna()
+
+        # Recompute reliability_ok on dropped index to get a 'bad_reliability' flag
+        rel_norm_dropped = dropped["reliability"].astype("string").str.strip()
+        if args.ignore_case:
+            rel_norm_dropped = rel_norm_dropped.str.lower()
+        if args.keep_reliability_values:
+            allowed = _normalize_values(args.keep_reliability_values, ignore_case=args.ignore_case)
+            bad_rel = ~rel_norm_dropped.isin(allowed)
+        elif args.drop_reliability_values:
+            disallowed = _normalize_values(args.drop_reliability_values, ignore_case=args.ignore_case)
+            bad_rel = rel_norm_dropped.isin(disallowed)
+        else:
+            bad_rel = pd.Series(False, index=dropped.index)
+        bad_rel = bad_rel.fillna(args.reliability_na_action == "drop")
+
+        dropped["bad_reliability"] = bad_rel
+
+        def _combine_reasons(row):
+            reasons = []
+            if row.get("mixed", False):
+                reasons.append("mixed")
+            # reliability
+            if row.get("bad_reliability", False):
+                reasons.append("bad_reliability")
+            elif row.get("missing_reliability", False):
+                reasons.append("missing_reliability")
+            # cells
+            if row.get("low_cells", False):
+                reasons.append("low_cells")
+            elif row.get("missing_cells", False):
+                reasons.append("missing_cells")
+            # genes
+            if row.get("low_genes", False):
+                reasons.append("low_genes")
+            elif row.get("missing_genes", False):
+                reasons.append("missing_genes")
+            return "; ".join(reasons) if reasons else "unspecified"
+
+        dropped["reason"] = dropped.apply(_combine_reasons, axis=1)
+
+    # Filter long-format rows by cluster membership
+    df_idx = df.set_index(args.cluster_cols)
+    kept_idx = summary.index[summary["keep"]]
+    filtered = df_idx.loc[df_idx.index.isin(kept_idx)].reset_index()
+
+    # Drop helper columns before writing
+    for col in ["_cell_type_str", "_is_mixed", "_detected"]:
+        if col in filtered.columns:
+            filtered = filtered.drop(columns=[col])
+
+    if args.verbose:
+        total_clusters = len(summary)
+        kept_clusters = int(summary["keep"].sum())
+        dropped_clusters = total_clusters - kept_clusters
+        total_rows = len(df)
+        kept_rows = len(filtered)
+        dropped_rows = total_rows - kept_rows
+
+        print(f"[INFO] Clusters total: {total_clusters}, kept: {kept_clusters}, dropped: {dropped_clusters}")
+        print(f"[INFO] Mixed filtering: {'ON' if args.drop_mixed else 'OFF'} (token='{args.mixed_token}', ignore_case={args.ignore_case})")
+        print(f"[INFO] Thresholds: min_cells={args.min_cells}, min_genes={args.min_genes}")
+        rel_mode = ("KEEP " + ", ".join(args.keep_reliability_values)) if args.keep_reliability_values \
+                   else (("DROP " + ", ".join(args.drop_reliability_values)) if args.drop_reliability_values else "OFF")
+        print(f"[INFO] Reliability column: {args.reliability_column}")
+        print(f"[INFO] Reliability filter: {rel_mode}; NA policy={args.reliability_na_action}")
+        print(f"[INFO] Rare-cell exception: {'ON' if rare_exception_on else 'OFF'}")
+        print(f"[INFO] Rows total: {total_rows}, kept: {kept_rows}, dropped: {dropped_rows}")
+
+    # Optional summary output
+    if args.write_summary:
+        try:
+            sep = args.delimiter
+            summary.reset_index().to_csv(args.write_summary, sep=sep, encoding=args.encoding, index=False)
+            if args.verbose:
+                print(f"[INFO] Wrote cluster summary to '{args.write_summary}'")
+        except Exception as e:
+            print(f"ERROR: Failed to write cluster summary '{args.write_summary}': {e}", file=sys.stderr)
+
+    # Optional dropped clusters output
+    if args.write_dropped:
+        try:
+            sep = args.delimiter
+            out = dropped.reset_index()[args.cluster_cols + [
+                "mixed_flag", "effective_mixed_flag", "cell_count", "genes_count",
+                "reliability", "mixed", "low_cells", "low_genes",
+                "missing_cells", "missing_genes", "missing_reliability",
+                "bad_reliability", "reason"
+            ]]
+            out.to_csv(args.write_dropped, sep=sep, encoding=args.encoding, index=False)
+            if args.verbose:
+                print(f"[INFO] Wrote dropped clusters list to '{args.write_dropped}'")
+        except Exception as e:
+            print(f"ERROR: Failed to write dropped clusters '{args.write_dropped}': {e}", file=sys.stderr)
+
+    # Write filtered long-format data
+    try:
+        filtered.to_csv(
+            args.output,
+            sep=args.delimiter,
+            encoding=args.encoding,
+            index=False,
+            quoting=0  # csv.QUOTE_MINIMAL
+        )
+        if args.verbose:
+            print(f"[INFO] Wrote {len(filtered)} rows to '{args.output}'")
+    except Exception as e:
+        print(f"ERROR: Failed to write output file '{args.output}': {e}", file=sys.stderr)
+        sys.exit(3)
+
+
+if __name__ == "__main__":
+    main()
+```
+CLI help
+```txt
+Required
+
+--input / -i — Input long-format TSV/CSV
+--output / -o — Output file
+
+Keys & columns
+
+--cluster-cols — Cluster ID columns (default: Tissue Cluster)
+--cell-type-column — Cell type label (default: Cell type)
+--count-column — Per‑cluster cell count (default: Cell count)
+--gene-id-column — Gene identifier (default: Gene)
+--reliability-column — Annotation confidence column (default: Annotation reliability)
+
+Filters
+
+--drop-mixed — Drop clusters whose cell type contains the token (--mixed-token; case via --ignore-case)
+--min-cells — Minimum cells per cluster (default: 30)
+--min-genes — Minimum detected genes (default: 10000)
+--disable-rare-exception — Turn OFF rare-cell exception (ON by default)
+Reliability:
+
+--keep-reliability-values values… — Keep only clusters with these reliability values
+--drop-reliability-values values… — Drop clusters with these reliability values
+--reliability-na-action (drop|keep) — Handle missing reliability (default: drop)
+
+
+--require-included — Require Included in aggregation == yes if present
+--ignore-case — Case-insensitive matching for mixed token and reliability values
+
+Detected genes modes
+
+--genes-mode compute — Count unique genes with detect-column above threshold
+
+--detect-column (default: nCPM)
+--detect-operator (> or >=, default: >)
+--detect-threshold (default: 0.0)
+
+
+--genes-mode column — Use genes count column in input
+
+--genes-count-column
+
+
+--genes-mode map — Join separate mapping file
+
+--genes-mapping-file + --map-genes-count-column
+
+
+
+Outputs
+
+--write-summary — Save cluster summary
+--write-dropped — Save dropped clusters with reasons (mixed, bad_reliability, low_cells, low_genes, missing_*)
+```
+#* I am running it like following*
+```bash
+
+python filter_integration_long.py \
+  --input combined_expression_data_filtered.tsv \
+  --output integrated_filtered.tsv \
+  --cluster-cols "Cell type" Cluster \
+  -R "Included in aggregation" \
+  --keep-reliability-values "yes" \
+  --min-cells 30 --min-genes 10000 \
+  --drop-mixed --ignore-case --require-included \
+  --write-summary cluster_summary.tsv \
+  --write-dropped dropped_clusters.tsv \
+  --verbose
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 I dropped any rows with "Included in aggregation" value is "no"
 filter_rows.py
