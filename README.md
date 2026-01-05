@@ -824,7 +824,7 @@ Outputs
 python filter_integration_long.py \
   --input combined_expression_data_filtered.tsv \
   --output integrated_filtered.tsv \
-  --cluster-cols "Cell type" Cluster \
+  --cluster-cols "Tissue" "Cluster" \
   -R "Included in aggregation" \
   --keep-reliability-values "yes" \
   --min-cells 30 --min-genes 10000 \
