@@ -320,7 +320,7 @@ python merge_tsv_by_keys.py \
 python merge_tsv_by_keys.py \
   --left rna_single_cell_cluster.tsv \
   --right rna_single_cell_clusters.tsv \
-  --left-keys Cluster \
+  --left-keys Cluster,Tissue,"Cell type" \
   --right-keys Cluster \
   --right-cols "Cell count,Included in aggregation,Annotation reliability" \
   --out  combined_expression_data.tsv
@@ -349,13 +349,15 @@ Following script tries to replicate it
 filter_integration_long.py
 ```py
 
+
 #!/usr/bin/env python3
 """
 Filter long-format expression data by cluster-level rules:
   - Drop clusters labeled as 'mixed' (substring match in Cell type; only if --drop-mixed).
   - Drop clusters with cells < min_cells OR detected genes < min_genes.
   - Exception: retain clusters below min_cells if genes >= min_genes (rare-cell preservation).
-  - Reliability filter: keep or drop clusters based on values from an explicitly chosen column.
+  - Reliability filter: keep or drop clusters based on values from a chosen column.
+  - Included filter: row-level keep specific values; cluster-level drop clusters if any/all rows match disallowed values.
 
 Detected genes modes:
   - compute: count unique genes per cluster with detection metric above a threshold (e.g., nCPM > 0).
@@ -363,25 +365,8 @@ Detected genes modes:
   - map:   join a separate cluster-level mapping file that has the genes count.
 
 QA outputs:
-  - --write-summary: per-cluster table (mixed, cells, genes, reliability, keep).
+  - --write-summary: per-cluster table (mixed, cells, genes, reliability, included flags, keep).
   - --write-dropped: dropped clusters with explicit reasons.
-
-Examples:
-  python filter_integration_long.py \
-    --input combined_expression_data_filtered.tsv \
-    --output integrated_filtered.tsv \
-    --cluster-cols Tissue Cluster \
-    --cell-type-column "Cell type" \
-    --count-column "Cell count" \
-    --genes-mode compute \
-    --detect-column nCPM --detect-operator '>' --detect-threshold 0 \
-    --min-cells 30 --min-genes 10000 \
-    --drop-mixed --ignore-case --require-included \
-    --reliability-column "Annotation reliability" \
-    --keep-reliability-values high "medium high" "medium low" \
-    --write-summary cluster_summary.tsv \
-    --write-dropped dropped_clusters.tsv \
-    --verbose
 """
 
 import argparse
@@ -391,7 +376,7 @@ import pandas as pd
 
 def parse_args():
     p = argparse.ArgumentParser(
-        description="Filter long-format per-gene data using cluster-level rules (mixed label, min cells, min genes, reliability), and export dropped clusters with reasons."
+        description="Filter long-format per-gene data using cluster-level rules (mixed label, min cells, min genes, reliability, 'included'), and export dropped clusters with reasons."
     )
     # I/O and format
     p.add_argument("--input", "-i", required=True, help="Path to input TSV/CSV file (long-format per gene per cluster).")
@@ -414,9 +399,7 @@ def parse_args():
     # Mixed cluster filtering
     p.add_argument("--drop-mixed", action="store_true", help="Drop clusters whose cell type contains the mixed token.")
     p.add_argument("--mixed-token", default="mixed", help="Token indicating mixed cell types (default: 'mixed').")
-    p.add_argument("--ignore-case", action="store_true", help="Case-insensitive matching for mixed token and reliability values.")
-    p.add_argument("--require-included", action="store_true",
-                   help="Additionally require Included in aggregation == 'yes' if the column exists (optional).")
+    p.add_argument("--ignore-case", action="store_true", help="Case-insensitive matching for mixed token and reliability/included values.")
 
     # Thresholds & rare-cell exception
     p.add_argument("--min-cells", type=int, default=30, help="Minimum cells per cluster (default: 30).")
@@ -429,11 +412,28 @@ def parse_args():
                    help="Column to use for reliability filtering (default: 'Annotation reliability').")
     rel_group = p.add_mutually_exclusive_group()
     rel_group.add_argument("--keep-reliability-values", nargs="+",
-                           help="Keep clusters whose reliability equals any of these values (e.g., 'high', 'medium', 'medium high', 'medium low').")
+                           help="Keep clusters whose reliability equals any of these values (e.g., 'high', 'medium high', 'medium low').")
     rel_group.add_argument("--drop-reliability-values", nargs="+",
                            help="Drop clusters whose reliability equals any of these values (e.g., 'low').")
     p.add_argument("--reliability-na-action", choices=["drop", "keep"], default="drop",
                    help="How to treat missing reliability values at cluster level (default: drop).")
+
+    # Included filtering
+    p.add_argument("--included-column", "-I", default="Included in aggregation",
+                   help="Column name for 'included' status (default: 'Included in aggregation').")
+    # Row-level filter (optional): keep only specified included values
+    p.add_argument("--filter-included-rows", action="store_true",
+                   help="Filter rows to keep only values in --included-keep-values (row-level).")
+    p.add_argument("--included-keep-values", nargs="+",
+                   help="Values considered 'included' when --filter-included-rows is set (e.g., yes).")
+    # Back-compat convenience: treat --require-included like row-level keep==yes
+    p.add_argument("--require-included", action="store_true",
+                   help="(Convenience) Same as --filter-included-rows --included-keep-values yes.")
+    # Cluster-level drop (optional): drop cluster if included column matches these values
+    p.add_argument("--drop-included-values", nargs="+",
+                   help="Drop clusters whose included column equals any of these values (e.g., 'no').")
+    p.add_argument("--included-cluster-mode", choices=["any", "all"], default="any",
+                   help="Drop cluster if ANY (default) or ALL rows match --drop-included-values.")
 
     # Detected genes modes
     p.add_argument("--genes-mode", choices=["compute", "column", "map"], default="compute",
@@ -482,7 +482,7 @@ def _normalize_values(values, ignore_case=False):
 def main():
     args = parse_args()
 
-    # Read long-format input
+    # Read input
     try:
         df = pd.read_csv(
             args.input,
@@ -497,29 +497,44 @@ def main():
         print(f"ERROR: Failed to read input file '{args.input}': {e}", file=sys.stderr)
         sys.exit(1)
 
-    # Optional: filter Included in aggregation == yes
-    if args.require_included and ("Included in aggregation" in df.columns):
-        df = df[df["Included in aggregation"].astype("string").str.lower().str.strip() == "yes"]
+    # Translate --require-included to row-level filter (keep yes)
+    if args.require_included and not args.filter_included_rows:
+        args.filter_included_rows = True
+        if not args.included_keep_values:
+            args.included_keep_values = ["yes"]
 
     # Validate required columns
     missing_cols = [c for c in args.cluster_cols if c not in df.columns]
     for c in [args.cell_type_column, args.count_column]:
         if c not in df.columns:
             missing_cols.append(c)
+    # Reliability column only required if a reliability filter is requested
+    if (args.keep_reliability_values or args.drop_reliability_values) and (args.reliability_column not in df.columns):
+        missing_cols.append(args.reliability_column)
+    # Included column required if any included filter is requested
+    if (args.filter_included_rows or args.drop_included_values or args.require_included) and (args.included_column not in df.columns):
+        missing_cols.append(args.included_column)
+    # Genes compute mode requirements
     if args.genes_mode == "compute":
         if args.gene_id_column not in df.columns:
             missing_cols.append(args.gene_id_column)
         if args.detect_column not in df.columns:
             missing_cols.append(args.detect_column)
-    if (args.keep_reliability_values or args.drop_reliability_values) and (args.reliability_column not in df.columns):
-        missing_cols.append(args.reliability_column)
 
     if missing_cols:
         print("ERROR: Missing required column(s): " + ", ".join(sorted(set(missing_cols))), file=sys.stderr)
         print("Available columns:\n  - " + "\n  - ".join(df.columns), file=sys.stderr)
         sys.exit(2)
 
-    # --- helper columns ---
+    # --- Row-level included filter (optional) ---
+    if args.filter_included_rows:
+        keep_vals = _normalize_values(args.included_keep_values, ignore_case=args.ignore_case)
+        included_norm = df[args.included_column].astype("string").str.strip()
+        if args.ignore_case:
+            included_norm = included_norm.str.lower()
+        df = df[included_norm.isin(keep_vals)]
+
+    # --- helper columns for mixed detection ---
     df["_cell_type_str"] = df[args.cell_type_column].astype("string")
     df["_is_mixed"] = df["_cell_type_str"].str.contains(
         args.mixed_token, case=not args.ignore_case, na=False, regex=False
@@ -550,14 +565,9 @@ def main():
     # Detected genes per cluster
     if args.genes_mode == "compute":
         detect_num = pd.to_numeric(df[args.detect_column], errors="coerce")
-        if args.detect_operator == ">=":
-            df["_detected"] = detect_num >= args.detect_threshold
-        else:
-            df["_detected"] = detect_num > args.detect_threshold
-
+        df["_detected"] = (detect_num >= args.detect_threshold) if args.detect_operator == ">=" else (detect_num > args.detect_threshold)
         detected_rows = df[df["_detected"].fillna(False)]
         genes_count_per_cluster = detected_rows.groupby(args.cluster_cols, dropna=False)[args.gene_id_column].nunique()
-
     elif args.genes_mode == "column":
         if not args.genes_count_column or args.genes_count_column not in df.columns:
             print("ERROR: --genes-count-column must be provided and exist in input for genes-mode=column.", file=sys.stderr)
@@ -565,7 +575,6 @@ def main():
         genes_count_per_cluster = grp[args.genes_count_column].agg(
             lambda s: pd.to_numeric(s, errors="coerce").dropna().iloc[0] if s.dropna().size > 0 else pd.NA
         )
-
     else:  # map mode
         if not args.genes_mapping_file or not args.map_genes_count_column:
             print("ERROR: Provide --genes-mapping-file and --map-genes-count-column for genes-mode=map.", file=sys.stderr)
@@ -581,20 +590,36 @@ def main():
         except Exception as e:
             print(f"ERROR: Failed to read mapping file '{args.genes_mapping_file}': {e}", file=sys.stderr)
             sys.exit(1)
-
-        # Ensure cluster keys exist in mapping
         missing_map_keys = [c for c in args.cluster_cols if c not in map_df.columns]
         if missing_map_keys:
             print("ERROR: Mapping file missing cluster key column(s): " + ", ".join(missing_map_keys), file=sys.stderr)
             print("Mapping columns:\n  - " + "\n  - ".join(map_df.columns), file=sys.stderr)
             sys.exit(2)
-
         if args.map_genes_count_column not in map_df.columns:
             print(f"ERROR: Mapping file missing genes count column '{args.map_genes_count_column}'.", file=sys.stderr)
             sys.exit(2)
-
         map_df[args.map_genes_count_column] = pd.to_numeric(map_df[args.map_genes_count_column], errors="coerce")
         genes_count_per_cluster = map_df.set_index(args.cluster_cols)[args.map_genes_count_column]
+
+    # Included cluster-level flags (optional) — FIXED: use helper column for boolean
+    if args.drop_included_values and args.included_column in df.columns:
+        included_norm = df[args.included_column].astype("string").str.strip()
+        if args.ignore_case:
+            included_norm = included_norm.str.lower()
+        drop_vals = set(_normalize_values(args.drop_included_values, ignore_case=args.ignore_case))
+        df["_included_is_drop"] = included_norm.isin(drop_vals)
+
+        # Any / All rows in a cluster matching drop values (aggregate the helper column)
+        included_bad_any = df.groupby(args.cluster_cols, dropna=False)["_included_is_drop"].any()
+        included_bad_all = df.groupby(args.cluster_cols, dropna=False)["_included_is_drop"].all()
+        included_bad_cluster = included_bad_any if args.included_cluster_mode == "any" else included_bad_all
+
+        # Missing included per cluster (no non-NA value observed) — use agg to avoid FutureWarning
+        has_non_na_included = grp[args.included_column].agg(lambda s: s.dropna().size > 0)
+        included_missing_cluster = ~has_non_na_included
+    else:
+        included_bad_cluster = pd.Series(False, index=grp.size().index)
+        included_missing_cluster = pd.Series(False, index=grp.size().index)
 
     # Align all series to a common MultiIndex covering all clusters in the input
     cluster_index = grp.size().index
@@ -603,7 +628,9 @@ def main():
         "effective_mixed_flag": effective_mixed_flag.reindex(cluster_index, fill_value=False).astype(bool),
         "cell_count": pd.to_numeric(cell_count_per_cluster.reindex(cluster_index), errors="coerce"),
         "genes_count": pd.to_numeric(genes_count_per_cluster.reindex(cluster_index), errors="coerce"),
-        "reliability": reliability_per_cluster.reindex(cluster_index)
+        "reliability": reliability_per_cluster.reindex(cluster_index),
+        "included_bad": included_bad_cluster.reindex(cluster_index, fill_value=False).astype(bool),
+        "included_missing": included_missing_cluster.reindex(cluster_index, fill_value=False).astype(bool),
     })
     summary.index.names = args.cluster_cols
 
@@ -622,22 +649,17 @@ def main():
     if args.keep_reliability_values or args.drop_reliability_values:
         allowed = _normalize_values(args.keep_reliability_values, ignore_case=args.ignore_case) if args.keep_reliability_values else None
         disallowed = _normalize_values(args.drop_reliability_values, ignore_case=args.ignore_case) if args.drop_reliability_values else None
-
-        # Normalize summary reliability values (strip + optional lower)
         rel_norm = summary["reliability"].astype("string").str.strip()
         if args.ignore_case:
             rel_norm = rel_norm.str.lower()
-
         if allowed is not None:
             reliability_ok = rel_norm.isin(allowed)
         else:
             reliability_ok = ~rel_norm.isin(disallowed)
-
-        # NA policy
         reliability_ok = reliability_ok.fillna(True if args.reliability_na_action == "keep" else False)
 
-    # Final keep decision
-    keep_clusters = reliability_ok & (~summary["effective_mixed_flag"]) & (
+    # Final keep decision (include cluster-level 'included' drop)
+    keep_clusters = reliability_ok & (~summary["effective_mixed_flag"]) & (~summary["included_bad"]) & (
         ((~too_few_cells_fill) & (~too_few_genes_fill)) | rare_keep
     )
     summary["keep"] = keep_clusters
@@ -651,6 +673,8 @@ def main():
         dropped["low_genes"] = too_few_genes.reindex(dropped.index).fillna(False)
         dropped["mixed"] = summary["effective_mixed_flag"].reindex(dropped.index).fillna(False)
         dropped["missing_reliability"] = dropped["reliability"].isna()
+        dropped["bad_included"] = summary["included_bad"].reindex(dropped.index).fillna(False)
+        dropped["missing_included"] = summary["included_missing"].reindex(dropped.index).fillna(False)
 
         # Recompute reliability_ok on dropped index to get a 'bad_reliability' flag
         rel_norm_dropped = dropped["reliability"].astype("string").str.strip()
@@ -665,28 +689,19 @@ def main():
         else:
             bad_rel = pd.Series(False, index=dropped.index)
         bad_rel = bad_rel.fillna(args.reliability_na_action == "drop")
-
         dropped["bad_reliability"] = bad_rel
 
         def _combine_reasons(row):
             reasons = []
-            if row.get("mixed", False):
-                reasons.append("mixed")
-            # reliability
-            if row.get("bad_reliability", False):
-                reasons.append("bad_reliability")
-            elif row.get("missing_reliability", False):
-                reasons.append("missing_reliability")
-            # cells
-            if row.get("low_cells", False):
-                reasons.append("low_cells")
-            elif row.get("missing_cells", False):
-                reasons.append("missing_cells")
-            # genes
-            if row.get("low_genes", False):
-                reasons.append("low_genes")
-            elif row.get("missing_genes", False):
-                reasons.append("missing_genes")
+            if row.get("mixed", False): reasons.append("mixed")
+            if row.get("bad_included", False): reasons.append("bad_included")
+            elif row.get("missing_included", False): reasons.append("missing_included")
+            if row.get("bad_reliability", False): reasons.append("bad_reliability")
+            elif row.get("missing_reliability", False): reasons.append("missing_reliability")
+            if row.get("low_cells", False): reasons.append("low_cells")
+            elif row.get("missing_cells", False): reasons.append("missing_cells")
+            if row.get("low_genes", False): reasons.append("low_genes")
+            elif row.get("missing_genes", False): reasons.append("missing_genes")
             return "; ".join(reasons) if reasons else "unspecified"
 
         dropped["reason"] = dropped.apply(_combine_reasons, axis=1)
@@ -697,7 +712,7 @@ def main():
     filtered = df_idx.loc[df_idx.index.isin(kept_idx)].reset_index()
 
     # Drop helper columns before writing
-    for col in ["_cell_type_str", "_is_mixed", "_detected"]:
+    for col in ["_cell_type_str", "_is_mixed", "_detected", "_included_is_drop"]:
         if col in filtered.columns:
             filtered = filtered.drop(columns=[col])
 
@@ -708,15 +723,16 @@ def main():
         total_rows = len(df)
         kept_rows = len(filtered)
         dropped_rows = total_rows - kept_rows
-
+        rel_mode = ("KEEP " + ", ".join(args.keep_reliability_values)) if args.keep_reliability_values \
+                   else (("DROP " + ", ".join(args.drop_reliability_values)) if args.drop_reliability_values else "OFF")
+        inc_mode = (f"DROP values={args.drop_included_values} mode={args.included_cluster_mode}") if args.drop_included_values else "OFF"
+        row_inc = (f"ROW keep={args.included_keep_values}") if args.filter_included_rows else "OFF"
         print(f"[INFO] Clusters total: {total_clusters}, kept: {kept_clusters}, dropped: {dropped_clusters}")
         print(f"[INFO] Mixed filtering: {'ON' if args.drop_mixed else 'OFF'} (token='{args.mixed_token}', ignore_case={args.ignore_case})")
         print(f"[INFO] Thresholds: min_cells={args.min_cells}, min_genes={args.min_genes}")
-        rel_mode = ("KEEP " + ", ".join(args.keep_reliability_values)) if args.keep_reliability_values \
-                   else (("DROP " + ", ".join(args.drop_reliability_values)) if args.drop_reliability_values else "OFF")
-        print(f"[INFO] Reliability column: {args.reliability_column}")
-        print(f"[INFO] Reliability filter: {rel_mode}; NA policy={args.reliability_na_action}")
-        print(f"[INFO] Rare-cell exception: {'ON' if rare_exception_on else 'OFF'}")
+        print(f"[INFO] Reliability column: {args.reliability_column}; filter: {rel_mode}; NA policy={args.reliability_na_action}")
+        print(f"[INFO] Included column: {args.included_column}; cluster filter: {inc_mode}; row filter: {row_inc}")
+        print(f"[INFO] Rare-cell exception: {'ON' if not args.disable_rare_exception else 'OFF'}")
         print(f"[INFO] Rows total: {total_rows}, kept: {kept_rows}, dropped: {dropped_rows}")
 
     # Optional summary output
@@ -735,10 +751,22 @@ def main():
             sep = args.delimiter
             out = dropped.reset_index()[args.cluster_cols + [
                 "mixed_flag", "effective_mixed_flag", "cell_count", "genes_count",
-                "reliability", "mixed", "low_cells", "low_genes",
+                "reliability", "included_bad", "included_missing",
+                "mixed", "low_cells", "low_genes",
                 "missing_cells", "missing_genes", "missing_reliability",
-                "bad_reliability", "reason"
+                "bad_reliability", "bad_included", "missing_included", "reason"
             ]]
+        except KeyError:
+            # If 'dropped' is empty, still create an empty table with the expected columns
+            out_cols = args.cluster_cols + [
+                "mixed_flag", "effective_mixed_flag", "cell_count", "genes_count",
+                "reliability", "included_bad", "included_missing",
+                "mixed", "low_cells", "low_genes",
+                "missing_cells", "missing_genes", "missing_reliability",
+                "bad_reliability", "bad_included", "missing_included", "reason"
+            ]
+            out = pd.DataFrame(columns=out_cols)
+        try:
             out.to_csv(args.write_dropped, sep=sep, encoding=args.encoding, index=False)
             if args.verbose:
                 print(f"[INFO] Wrote dropped clusters list to '{args.write_dropped}'")
@@ -763,77 +791,164 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 ```
 CLI help
 ```txt
-Required
 
---input / -i — Input long-format TSV/CSV
---output / -o — Output file
+usage: filter_integration_long.py [-h] --input INPUT --output OUTPUT
+                                  [--delimiter DELIMITER] [--encoding ENCODING] [--quotechar QUOTECHAR]
+                                  [--escapechar ESCAPECHAR] [--verbose]
+                                  [--write-summary WRITE_SUMMARY] [--write-dropped WRITE_DROPPED]
+                                  [--cluster-cols CLUSTER_COLS [CLUSTER_COLS ...]]
+                                  [--cell-type-column CELL_TYPE_COLUMN] [--count-column COUNT_COLUMN]
+                                  [--gene-id-column GENE_ID_COLUMN] [--drop-mixed] [--mixed-token MIXED_TOKEN]
+                                  [--ignore-case] [--min-cells MIN_CELLS] [--min-genes MIN_GENES]
+                                  [--disable-rare-exception] [--reliability-column RELIABILITY_COLUMN]
+                                  [--keep-reliability-values KEEP_RELIABILITY_VALUES [KEEP_RELIABILITY_VALUES ...] |
+                                   --drop-reliability-values DROP_RELIABILITY_VALUES [DROP_RELIABILITY_VALUES ...]]
+                                  [--reliability-na-action {drop,keep}]
+                                  [--included-column INCLUDED_COLUMN] [--filter-included-rows]
+                                  [--included-keep-values INCLUDED_KEEP_VALUES [INCLUDED_KEEP_VALUES ...]]
+                                  [--require-included] [--drop-included-values DROP_INCLUDED_VALUES [DROP_INCLUDED_VALUES ...]]
+                                  [--included-cluster-mode {any,all}]
+                                  [--genes-mode {compute,column,map}] [--detect-column DETECT_COLUMN]
+                                  [--detect-operator {>,>=}] [--detect-threshold DETECT_THRESHOLD]
+                                  [--genes-count-column GENES_COUNT_COLUMN]
+                                  [--genes-mapping-file GENES_MAPPING_FILE] [--map-delimiter MAP_DELIMITER]
+                                  [--map-encoding MAP_ENCODING] [--map-genes-count-column MAP_GENES_COUNT_COLUMN]
 
-Keys & columns
+Filter long-format per-gene data using cluster-level rules (mixed label, min cells, min genes,
+reliability, and 'included'), with QA outputs.
 
---cluster-cols — Cluster ID columns (default: Tissue Cluster)
---cell-type-column — Cell type label (default: Cell type)
---count-column — Per‑cluster cell count (default: Cell count)
---gene-id-column — Gene identifier (default: Gene)
---reliability-column — Annotation confidence column (default: Annotation reliability)
+required arguments:
+  --input, -i                Path to input TSV/CSV (long-format per gene per cluster).
+  --output, -o               Path to output TSV/CSV (filtered).
 
-Filters
+format & IO:
+  --delimiter, -d            Field delimiter (default: tab '\t').
+  --encoding                 File encoding (default: utf-8).
+  --quotechar                Quote character (default: ").
+  --escapechar               Escape character (optional).
+  --verbose, -v              Print summary details to stdout.
+  --write-summary            Path to save a per-cluster summary table.
+  --write-dropped            Path to save dropped clusters with explicit reasons.
 
---drop-mixed — Drop clusters whose cell type contains the token (--mixed-token; case via --ignore-case)
---min-cells — Minimum cells per cluster (default: 30)
---min-genes — Minimum detected genes (default: 10000)
---disable-rare-exception — Turn OFF rare-cell exception (ON by default)
-Reliability:
+columns (input schema):
+  --cluster-cols             Column(s) identifying a cluster (default: Tissue Cluster).
+                             Pass multiple columns separated by spaces.
+  --cell-type-column         Column with cell type labels (default: "Cell type").
+  --count-column             Column with per-cluster cell count (default: "Cell count").
+  --gene-id-column           Column with gene identifiers (default: "Gene").
 
---keep-reliability-values values… — Keep only clusters with these reliability values
---drop-reliability-values values… — Drop clusters with these reliability values
---reliability-na-action (drop|keep) — Handle missing reliability (default: drop)
+mixed cluster filtering:
+  --drop-mixed               Drop clusters whose cell type contains the mixed token.
+  --mixed-token              Token indicating mixed clusters (default: "mixed").
+  --ignore-case              Case-insensitive matching for mixed token, reliability, and included values.
 
+thresholds & rare-cell exception:
+  --min-cells                Minimum cells per cluster (default: 30).
+  --min-genes                Minimum detected genes per cluster (default: 10000).
+  --disable-rare-exception   Turn OFF the rare-cell exception (ON by default).
+                             Rare-cell exception: keep clusters with <min cells if genes ≥ min.
 
---require-included — Require Included in aggregation == yes if present
---ignore-case — Case-insensitive matching for mixed token and reliability values
+reliability filtering (cluster-level):
+  --reliability-column, -R   Column used for reliability (default: "Annotation reliability").
+  --keep-reliability-values  Keep only clusters whose reliability equals any of these values
+                             (e.g., high "medium high" "medium low"). (mutually exclusive with --drop-reliability-values)
+  --drop-reliability-values  Drop clusters whose reliability equals any of these values
+                             (e.g., low). (mutually exclusive with --keep-reliability-values)
+  --reliability-na-action    How to treat missing reliability at cluster level: drop | keep (default: drop).
 
-Detected genes modes
+included filtering (row- and cluster-level):
+  --included-column, -I      Column used for included status (default: "Included in aggregation").
+  --filter-included-rows     Row-level filter: keep only rows whose included value is in --included-keep-values.
+  --included-keep-values     Values considered included for row-level filtering (e.g., yes).
+  --require-included         Convenience: same as "--filter-included-rows --included-keep-values yes".
+  --drop-included-values     Cluster-level filter: drop clusters if the included value matches any of these (e.g., no).
+  --included-cluster-mode    When using --drop-included-values, drop the cluster if ANY row matches (default: any),
+                             or only if ALL rows match (all).
 
---genes-mode compute — Count unique genes with detect-column above threshold
+detected genes (choose one mode):
+  --genes-mode               How to obtain detected genes per cluster: compute | column | map (default: compute).
 
---detect-column (default: nCPM)
---detect-operator (> or >=, default: >)
---detect-threshold (default: 0.0)
+  compute mode:
+    --detect-column          Column used for detection metric (default: nCPM).
+    --detect-operator        Detection operator: > | >= (default: >).
+    --detect-threshold       Detection threshold (float, default: 0.0). Example: nCPM >= 1.
 
+  column mode:
+    --genes-count-column     Column in input containing per-cluster detected gene counts.
 
---genes-mode column — Use genes count column in input
+  map mode:
+    --genes-mapping-file     Separate mapping file with detected genes per cluster.
+    --map-delimiter          Mapping file delimiter (default: tab).
+    --map-encoding           Mapping file encoding (default: utf-8).
+    --map-genes-count-column Column in mapping file with detected gene counts.
 
---genes-count-column
+notes:
+  • Cluster identity = unique combination of the columns passed to --cluster-cols (e.g., Tissue + Cluster).
+  • Values with spaces MUST be quoted in the shell: "Included in aggregation", "medium high".
+  • Missing values in cell count / detected genes are treated as failing thresholds (i.e., dropped),
+    unless preserved by the rare-cell exception (cells < min AND genes ≥ min).
+  • Row-level included filtering (--filter-included-rows) removes rows before summarizing clusters.
+    Cluster-level included filtering (--drop-included-values) records QA reasons (bad_included / missing_included).
 
+examples:
+  # Typical use: compute detected genes (nCPM > 0), drop mixed, drop clusters with any 'Included in aggregation' == no
+  python filter_integration_long.py \
+    --input combined_expression_data.tsv \
+    --output integrated_filtered.tsv \
+    --cluster-cols Tissue Cluster \
+    --min-cells 30 --min-genes 10000 \
+    --drop-mixed --ignore-case \
+    --included-column "Included in aggregation" \
+    --drop-included-values no \
+    --included-cluster-mode any \
+    --write-summary cluster_summary.tsv \
+    --write-dropped dropped_clusters.tsv \
+    --verbose
 
---genes-mode map — Join separate mapping file
+  # Enforce reliability: keep only high + medium high + medium low; compute detected genes with nCPM >= 1
+  python filter_integration_long.py \
+    --input combined_expression_data.tsv \
+    --output integrated_filtered.tsv \
+    --cluster-cols Tissue Cluster \
+    --min-cells 30 --min-genes 10000 \
+    --drop-mixed --ignore-case \
+    -R "Annotation reliability" \
+    --keep-reliability-values high "medium high" "medium low" \
+    --genes-mode compute --detect-column nCPM --detect-operator '>=' --detect-threshold 1 \
+    --write-summary cluster_summary.tsv \
+    --write-dropped dropped_clusters.tsv \
+    --verbose
 
---genes-mapping-file + --map-genes-count-column
+  # Use a precomputed per-cluster genes count in the input (column mode)
+  python filter_integration_long.py \
+    --input combined_expression_data.tsv \
+    --output integrated_filtered.tsv \
+    --cluster-cols Tissue Cluster \
+    --genes-mode column --genes-count-column "Detected genes" \
+    --min-cells 30 --min-genes 10000 \
+    --drop-mixed \
+    --verbose
 
-
-
-Outputs
-
---write-summary — Save cluster summary
---write-dropped — Save dropped clusters with reasons (mixed, bad_reliability, low_cells, low_genes, missing_*)
 ```
 #*I am running it like following*
 ```bash
-
 python filter_integration_long.py \
   --input combined_expression_data.tsv \
   --output integrated_filtered.tsv \
-  --cluster-cols "Tissue" "Cluster" \
-  -R "Included in aggregation" \
-  --keep-reliability-values "yes" \
+  --cluster-cols Tissue Cluster \
   --min-cells 30 --min-genes 10000 \
-  --drop-mixed --ignore-case --require-included \
+  --drop-mixed --ignore-case \
+  --included-column "Included in aggregation" \
+  --drop-included-values no \
+  --included-cluster-mode any \
   --write-summary cluster_summary.tsv \
   --write-dropped dropped_clusters.tsv \
   --verbose
+
 ```
 
 
