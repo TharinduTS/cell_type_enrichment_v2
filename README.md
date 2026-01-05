@@ -39,12 +39,22 @@ HPA has,
 
 These nCPM values are in “rna_single_cell_cluster.tsv”
 
+```tsv
+Gene    Gene name       Tissue  Cluster Cell type       Read count      nCPM
+ENSG00000000003 TSPAN6  ovary   c-0     ovarian stromal cells   493     92.5
+ENSG00000000003 TSPAN6  ovary   c-1     ovarian stromal cells   529     80.5
+ENSG00000000003 TSPAN6  ovary   c-2     ovarian stromal cells   143     52.3
+ENSG00000000003 TSPAN6  ovary   c-3     ovarian stromal cells   456     91.4
+ENSG00000000003 TSPAN6  ovary   c-4     vascular endothelial cells      164     28.6
+```
+
 The file “rna_single_cell_clusters.tsv” (which is different from the file above) contains information on cell counts and reliability
+```tsv
 Tissue  Cluster Cell type       Cell type detail        Cell type class Cell count      Included in aggregation Annotation reliability
 adipose tissue  c-0     mesothelial cells       mesothelial cells       specialized epithelial cells    8942    yes     high
 adipose tissue  c-1     adipocytes      mature adipocytes       mesenchymal cells       6996    yes     high
 adipose tissue  c-2     adipocytes      mature adipocytes       mesenchymal cells       6993    yes     high
-
+```
 Because I need cell count data for my analysis, I start by combining these dataframes to add columns "Cell count" , "Included in aggregation", "Annotation reliability" from rna_single_cell_clusters.tsv to rna_single_cell_cluster.tsv matching by Cluster.
 I did this with merge_tsv_by_keys.py
 
