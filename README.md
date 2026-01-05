@@ -305,7 +305,7 @@ python merge_tsv_by_keys.py \
   --out merged.tsv
 ```
 
-##*I Used the following command*
+#*I Used the following command*
 ```bash
 python merge_tsv_by_keys.py \
   --left rna_single_cell_cluster.tsv \
