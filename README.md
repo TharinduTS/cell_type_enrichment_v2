@@ -320,8 +320,8 @@ python merge_tsv_by_keys.py \
 python merge_tsv_by_keys.py \
   --left rna_single_cell_cluster.tsv \
   --right rna_single_cell_clusters.tsv \
-  --left-keys Cluster,Tissue,"Cell type" \
-  --right-keys Cluster \
+  --left-keys "Cluster","Tissue","Cell type" \
+  --right-keys "Cluster","Tissue","Cell type" \
   --right-cols "Cell count,Included in aggregation,Annotation reliability" \
   --out  combined_expression_data.tsv
 ```
