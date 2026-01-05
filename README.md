@@ -824,7 +824,7 @@ Outputs
 ```bash
 
 python filter_integration_long.py \
-  --input combined_expression_data_filtered.tsv \
+  --input combined_expression_data.tsv \
   --output integrated_filtered.tsv \
   --cluster-cols "Tissue" "Cluster" \
   -R "Included in aggregation" \
