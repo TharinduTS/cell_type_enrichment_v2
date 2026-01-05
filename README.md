@@ -538,8 +538,8 @@ Optional arguments
 #*I Used the following command*
 ```bash
 python filter_rows.py \
-  --input rna_single_cell_clusters.tsv \
-  --output rna_single_cell_clusters_filtered.tsv \
+  --input combined_expression_data.tsv \
+  --output combined_expression_data_filtered.tsv \
   --column "Included in aggregation" \
   --drop no \
   --delimiter $'\t' \
