@@ -18,9 +18,11 @@ HPA has,
 
 •  Raw counts → pseudobulk within each cluster
 	They average raw counts across cells inside each cluster, producing one pseudobulk count vector per cluster.
+	
 •  pCPM: counts per million normalization
 	CPM is computed from pseudobulk counts (not per cell counts).
 	CPM does not include a weighting by number of cells — it is based only on total pseudobulk counts.
+	
 •  TMM normalization of pCPM → nCPM
 	TMM normalization scales CPM profiles to remove compositional bias.
 	TMM does not use cell counts; it uses global expression distributions.
