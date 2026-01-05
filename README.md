@@ -342,6 +342,8 @@ Human Protein atlas explains their filtration procedure as following
 
 "Excluded from the cross-dataset aggregation and subsequent gene classification were clusters with mixed cell types, clusters with low cell type annotation confidence, and cell types within a tissue that comprised less than 30 cells or their aggregated profile contained fewer than 10,000 detected genes. We retained, however, a small number of clusters below the 30-cell threshold, provided they demonstrated more than 10,000 detected genes, to preserve representation of rare cell types. A total of 161 clusters out of 1175 clusters were excluded from the cross dataset integration and downstream analysis."
 
+Just dropping rows with "Included in aggregation"==no (With -R "Included in aggregation" \ --keep-reliability-values "yes" \) would be enough as HPA has already done this. But I am enforcing other steps as well Just in case)
+
 Following script tries to replicate it 
 
 filter_integration_long.py
