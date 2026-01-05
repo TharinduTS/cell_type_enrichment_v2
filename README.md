@@ -818,7 +818,7 @@ Outputs
 --write-summary — Save cluster summary
 --write-dropped — Save dropped clusters with reasons (mixed, bad_reliability, low_cells, low_genes, missing_*)
 ```
-#* I am running it like following*
+#*I am running it like following*
 ```bash
 
 python filter_integration_long.py \
