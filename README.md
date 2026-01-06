@@ -1541,6 +1541,462 @@ Then I ran it like
 ```
 ./run_celltype_enrichment_v1_4.sh --input-file integrated_filtered.tsv --output-file enrichV1_4_1clusters.tsv --min-clusters 1 --specificity-mode penalize
 ```
+And added estimated celltype counts with estimate_celltype_counts.py
+
+estimate_celltype_counts.py
+```py
+
+#!/usr/bin/env python3
+"""
+Append to the input long-format dataframe a per-gene column estimating
+the number of cell types each gene is expressed in.
+
+Inputs (long format): one row per (Gene, Cell type) with at least:
+  - Gene identifier column (default: "Gene")
+  - Cell type column (default: "Cell type")
+  - Expression column (default: "avg_nCPM")
+  - Specificity tau column (default: "specificity_tau")
+
+Outputs:
+  - A file of the SAME SHAPE as input, with ONE extra column:
+      estimated_celltypes
+    where the appended estimate is chosen via --estimate-col:
+      M_est_int  = round( N - τ*(N-1) )  (integer; τ from Yanai et al.)
+      K_count_*  = #cell types with expression >= threshold (integer)
+      D1_shannon = exp(Shannon entropy)  (effective # cell types)
+      D2_simpson = 1/sum(p_i^2)          (effective # cell types)
+
+Options:
+  - --auto-threshold elbow|otsu|none : auto-pick threshold from data (default: none)
+  - --threshold <float>              : manual threshold if auto is none (default: 1.0)
+  - --min-threshold <float>          : lower bound for auto threshold (default: 0.5)
+  - --summary-out                    : optional per-gene metrics table
+  - --plot                           : optional PNG plot
+
+This script DOES NOT compute τ; it expects an existing specificity_tau column.
+
+References:
+  - τ, Counts, Shannon, Simpson: standard tissue-specificity metrics (tspex docs; Yanai τ).
+  - Benchmarks & interpretation: Kryuchkova-Mostacci & Robinson-Rechavi (2017).
+"""
+
+import argparse
+import os
+import sys
+import codecs
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+
+def safe_log(x, eps: float = 1e-12):
+    """Natural log with epsilon to avoid log(0)."""
+    return np.log(np.maximum(x, eps))
+
+
+def normalize_sep(s: str | None) -> str | None:
+    """
+    Convert CLI-provided separators like "\\t" into a literal tab.
+    """
+    if s is None:
+        return None
+    try:
+        return codecs.decode(s, "unicode_escape")
+    except Exception:
+        return s
+
+
+def read_table(path: str, sep: str = ",", sheet: str | None = None) -> pd.DataFrame:
+    """
+    Read CSV/TSV or Excel by extension, unless sheet is given for Excel.
+    Uses 'c' engine for 1-char separators; else 'python' to avoid warnings.
+    """
+    ext = os.path.splitext(path)[1].lower()
+    if ext in [".xlsx", ".xls"] or sheet is not None:
+        engine = "openpyxl" if ext == ".xlsx" else "xlrd"
+        return pd.read_excel(path, sheet_name=sheet, engine=engine)
+    else:
+        sep_norm = normalize_sep(sep)
+        engine = "c" if (sep_norm is not None and len(sep_norm) == 1) else "python"
+        return pd.read_csv(path, sep=sep_norm, engine=engine)
+
+
+def write_table(df: pd.DataFrame, path: str, sep: str = ",", sheet: str | None = None) -> None:
+    """
+    Write CSV/TSV or Excel by extension, unless sheet is given for Excel.
+    Ensures text output uses exactly one-character delimiter.
+    """
+    ext = os.path.splitext(path)[1].lower()
+    if ext in [".xlsx", ".xls"] or sheet is not None:
+        engine = "openpyxl" if ext == ".xlsx" else "xlrd"
+        df.to_excel(path, sheet_name=sheet or "Sheet1", engine=engine, index=False)
+    else:
+        sep_norm = normalize_sep(sep)
+        if sep_norm is None or len(sep_norm) != 1:
+            sep_norm = "\t" if ext == ".tsv" else ","
+        df.to_csv(path, sep=sep_norm, index=False)
+
+
+def effective_numbers(group: pd.DataFrame, expr_col: str) -> pd.Series:
+    """
+    Compute Shannon (D1) and Simpson (D2) effective numbers per gene.
+    """
+    x = group[expr_col].values.astype(float)
+    x = np.clip(x, a_min=0.0, a_max=None)  # guard against negatives
+    total = x.sum()
+    if total <= 0:
+        return pd.Series({"D1_shannon": 0.0, "D2_simpson": 0.0})
+    p = x / total
+    H = -(p * safe_log(p)).sum()
+    D1 = float(np.exp(H))           # Shannon/Hill number
+    D2 = float(1.0 / np.sum(p**2))  # Simpson/Hill number
+    return pd.Series({"D1_shannon": D1, "D2_simpson": D2})
+
+
+# -------------------- Automatic threshold detectors --------------------
+
+def suggest_threshold_elbow(df: pd.DataFrame, expr_col: str) -> float:
+    """
+    Elbow (knee) detection on sorted global expression values.
+    Returns the value at the point of maximum deviation from the y=x line.
+    """
+    vals = df[expr_col].astype(float).values
+    vals = np.clip(vals, a_min=0.0, a_max=None)
+    x = np.sort(vals)
+    if x.size == 0:
+        return 1.0
+    # normalized indices and values
+    i = np.linspace(0, 1, len(x))
+    x_norm = (x - x.min()) / (x.max() - x.min() + 1e-12)
+    # maximum deviation from diagonal y=x
+    idx = int(np.argmax(np.abs(x_norm - i)))
+    return float(x[idx])
+
+
+def suggest_threshold_otsu(df: pd.DataFrame, expr_col: str, bins: int = 256) -> float:
+    """
+    Otsu-like threshold on the histogram of expression values (log1p-transformed for stability),
+    then mapped back to raw CPM space.
+    """
+    vals = df[expr_col].astype(float).values
+    vals = np.clip(vals, a_min=0.0, a_max=None)
+    # Work in log1p to separate background/signal more clearly
+    lv = np.log1p(vals)
+    hist, bin_edges = np.histogram(lv, bins=bins)
+    if hist.sum() == 0:
+        return 1.0
+    weight1 = np.cumsum(hist)
+    weight2 = np.cumsum(hist[::-1])[::-1]
+    centers = (bin_edges[:-1] + bin_edges[1:]) / 2.0
+    mean = np.cumsum(hist * centers)
+    mean_total = mean[-1]
+    denom = (weight1 * (hist.sum() - weight1)).astype(float)
+    denom[denom == 0] = 1e-12
+    between = (mean_total * weight1 - mean) ** 2 / denom
+    idx = int(np.argmax(between))
+    thresh_log = centers[idx]
+    return float(np.expm1(thresh_log))  # map back to raw CPM
+
+
+# ----------------------------------------------------------------------
+
+def main():
+    ap = argparse.ArgumentParser(
+        description="Append per-gene estimated # of expressing cell types to the input table."
+    )
+    ap.add_argument("--in", dest="in_path", required=True, help="Input file (CSV/TSV/XLSX).")
+    ap.add_argument("--out", dest="out_path", required=True,
+                    help="Output file (same shape as input) with one extra column.")
+    ap.add_argument("--sep", default=None, help="Field separator for CSV/TSV (e.g., '\\t' or ',').")
+    ap.add_argument("--sheet", default=None, help="Excel sheet name (for reading and/or writing).")
+
+    ap.add_argument("--gene-col", default="Gene", help="Column with gene ID/symbol (default: 'Gene').")
+    ap.add_argument("--celltype-col", default="Cell type", help="Column with cell type (default: 'Cell type').")
+    ap.add_argument("--expr-col", default="avg_nCPM", help="Expression column (default: 'avg_nCPM').")
+    ap.add_argument("--tau-col", default="specificity_tau", help="Specificity τ column (default: 'specificity_tau').")
+
+    ap.add_argument("--threshold", type=float, default=1.0,
+                    help="Expression threshold for counts (default: 1.0 if --auto-threshold=none).")
+    ap.add_argument("--auto-threshold", choices=["none", "elbow", "otsu"], default="none",
+                    help="Automatic threshold detection method (default: none).")
+    ap.add_argument("--min-threshold", type=float, default=0.5,
+                    help="Lower bound for auto threshold (default: 0.5).")
+
+    ap.add_argument("--estimate-col", default="M_est_int",
+                    help=("Which metric to append: 'M_est_int' (default), "
+                          "or 'D1_shannon', 'D2_simpson', or the thresholded "
+                          "count name 'K_count_<exprcol>≥<threshold>' (use 'K_count' for auto-name)."))
+
+    ap.add_argument("--summary-out", default=None,
+                    help="Optional per-gene summary metrics file (CSV/TSV/XLSX).")
+    ap.add_argument("--plot", default=None,
+                    help="Optional output PNG for τ vs estimators (e.g., 'fig.png').")
+    ap.add_argument("--min-rows-per-gene", type=int, default=1,
+                    help="Exclude genes with fewer than this many rows/cell types (default: 1).")
+    args = ap.parse_args()
+
+    # Normalize CLI separator and set default by input extension if not provided
+    args.sep = normalize_sep(args.sep)
+    if args.sep is None:
+        in_ext = os.path.splitext(args.in_path)[1].lower()
+        args.sep = "\t" if in_ext == ".tsv" else ","
+
+    # Read input
+    df = read_table(args.in_path, sep=args.sep, sheet=args.sheet)
+
+    # Drop unreliable column if present
+    if "single_cell_type_gene" in df.columns:
+        df = df.drop(columns=["single_cell_type_gene"])
+
+    # Basic validation
+    required_cols = [args.gene_col, args.celltype_col, args.expr_col, args.tau_col]
+    missing = [c for c in required_cols if c not in df.columns]
+    if missing:
+        print(f"ERROR: Missing required columns: {missing}", file=sys.stderr)
+        sys.exit(1)
+
+    # Clean expression values
+    df[args.expr_col] = pd.to_numeric(df[args.expr_col], errors="coerce").fillna(0.0)
+    df[args.expr_col] = df[args.expr_col].clip(lower=0.0)
+
+    # Drop rows with NA in essentials (gene/celltype/tau)
+    df = df.dropna(subset=[args.gene_col, args.celltype_col, args.tau_col])
+
+    # Optionally filter genes with too few rows
+    counts = df.groupby(args.gene_col)[args.celltype_col].nunique()
+    valid_genes = counts[counts >= args.min_rows_per_gene].index
+    df = df[df[args.gene_col].isin(valid_genes)]
+
+    # Determine threshold
+    if args.auto_threshold == "elbow":
+        auto_thr = suggest_threshold_elbow(df, args.expr_col)
+        thr = max(auto_thr, args.min_threshold)
+        print(f"[INFO] Auto threshold (elbow): {auto_thr:.4f} → using {thr:.4f}")
+    elif args.auto_threshold == "otsu":
+        auto_thr = suggest_threshold_otsu(df, args.expr_col, bins=256)
+        thr = max(auto_thr, args.min_threshold)
+        print(f"[INFO] Auto threshold (otsu): {auto_thr:.4f} → using {thr:.4f}")
+    else:
+        thr = float(args.threshold)
+        print(f"[INFO] Manual threshold: using {thr:.4f}")
+
+    # N per gene: number of distinct cell types
+    N_per_gene = df.groupby(args.gene_col)[args.celltype_col].nunique().rename("N")
+
+    # τ per gene
+    tau = (
+        pd.to_numeric(df[args.tau_col], errors="coerce")
+          .groupby(df[args.gene_col]).first()
+          .astype(float)
+          .rename("specificity_tau")
+    )
+
+    # τ → M estimate: M ≈ N − τ (N − 1)
+    M_est = (N_per_gene - tau * (N_per_gene - 1)).rename("M_est")
+    M_est_int = M_est.round().clip(lower=1).rename("M_est_int")
+
+    # Distribution-aware effective numbers (Shannon/Simpson)
+    eff_df = (
+        df.groupby(args.gene_col, group_keys=False)[[args.expr_col]]
+          .apply(lambda g: effective_numbers(g, args.expr_col))
+    )
+
+    # Thresholded counts
+    thr_name = f"K_count_{args.expr_col}≥{thr}"
+    K_count = (
+        df.assign(expr_flag=lambda d: (d[args.expr_col] >= thr).astype(int))
+          .groupby(args.gene_col)["expr_flag"].sum()
+          .rename(thr_name)
+    )
+
+    # Combine per-gene metrics
+    per_gene = (
+        pd.concat([N_per_gene, tau, M_est, M_est_int, eff_df, K_count], axis=1)
+          .reset_index()
+          .rename(columns={args.gene_col: "Gene"})
+    )
+
+    # Decide which column to append
+    est_col = args.estimate_col
+    if est_col.lower() == "k_count":
+        est_col = thr_name
+    if est_col not in per_gene.columns:
+        print(f"ERROR: --estimate-col '{args.estimate_col}' not found in metrics.\n"
+              f"Available columns include: {list(per_gene.columns)}\n"
+              f"For thresholded count, use: {thr_name} or 'K_count'", file=sys.stderr)
+        sys.exit(1)
+
+    # Merge back to original df to append the selected estimate per gene
+    to_append = per_gene[["Gene", est_col]].rename(columns={est_col: "estimated_celltypes"})
+    out_df = df.merge(to_append, left_on=args.gene_col, right_on="Gene", how="left").drop(columns=["Gene"])
+
+    # Write the "input + one extra column" output
+    write_table(out_df, args.out_path, sep=args.sep, sheet=args.sheet)
+
+    # Optional: write per-gene summary table (sorted fewest → most)
+    if args.summary_out:
+        per_gene_sorted = per_gene.sort_values(by=est_col, ascending=True)
+        write_table(per_gene_sorted, args.summary_out, sep=args.sep, sheet=args.sheet)
+
+    # Optional plot
+    if args.plot:
+        plt.figure(figsize=(9, 6))
+        plt.scatter(per_gene["specificity_tau"], per_gene["M_est"], s=14, alpha=0.45, label="M_est (τ→M)")
+        plt.scatter(per_gene["specificity_tau"], per_gene["D1_shannon"], s=14, alpha=0.45, label="D1 (Shannon effective)")
+        plt.scatter(per_gene["specificity_tau"], per_gene["D2_simpson"], s=14, alpha=0.45, label="D2 (Simpson effective)")
+        plt.scatter(per_gene["specificity_tau"], per_gene[thr_name], s=14, alpha=0.45, label=thr_name)
+
+        plt.xlabel("Specificity τ")
+        plt.ylabel("Estimated # of cell types")
+        plt.title("Per-gene cell-type count estimates vs τ")
+        plt.legend()
+        plt.grid(alpha=0.25)
+        plt.tight_layout()
+        plt.savefig(args.plot, dpi=180)
+        plt.close()
+
+    print(f"Done. Wrote appended output (input + column) to: {args.out_path}")
+    if args.summary_out:
+        print(f"Wrote per-gene summary to: {args.summary_out}")
+    if args.plot:
+        print(f"Wrote figure to: {args.plot}")
+
+
+if __name__ == "__main__":
+    main()
+```
+CLI help
+```txt
+
+# estimate_celltype_counts.py — User Guide (CLI Options)
+
+Append a per‑gene estimate of **number of expressing cell types** to a **long‑format** table (one row per `Gene × Cell type`).  
+Also optionally write a per‑gene summary and a diagnostic plot.
+
+## Primary Usage (example)
+
+```bash
+python estimate_celltype_counts.py \
+  --in enrichV1_4_3clusters.tsv \
+  --out enrichV1_4_3clusters_with_estimated_celltypes.tsv \
+  --expr-col avg_nCPM \
+  --tau-col specificity_tau \
+  --gene-col Gene \
+  --celltype-col "Cell type" \
+  --auto-threshold otsu \
+  --min-threshold 0.5 \
+  --estimate-col K_count \
+  --summary-out per_gene_metrics.tsv \
+  --plot tau_vs_counts.png \
+  --sep $'\t'
+```
+```
+
+# --- I/O paths and formats ---
+--in PATH \                             # Input file: CSV/TSV/XLSX (long format: one row per Gene × Cell type)
+--out PATH \                            # Output file: same shape as input + ONE column 'estimated_celltypes'
+--sep "\t" \                            # Field separator for CSV/TSV; use "\t" (or $'\t') for TSV, default: "," for CSV
+--sheet "Sheet1" \                      # Excel sheet name for reading/writing .xlsx/.xls
+
+# --- Column names (adjust to your data) ---
+--gene-col Gene \                       # Column with gene identifiers (default: "Gene")
+--celltype-col "Cell type" \            # Column with cell type names (default: "Cell type")
+--expr-col avg_nCPM \                   # Expression column used for counts/effective numbers (default: "avg_nCPM")
+--tau-col specificity_tau \             # τ (Yanai’s tau) column per gene (default: "specificity_tau")
+
+# --- Threshold selection (for K_count) ---
+--auto-threshold elbow \                # Auto-pick CPM threshold: elbow/knee of sorted values
+--auto-threshold otsu \                 # Auto-pick CPM threshold: Otsu on log1p(CPM), mapped back to CPM
+--auto-threshold none \                 # Disable auto; rely on --threshold
+--min-threshold 0.5 \                   # Lower bound when auto is used (guards against ambient RNA tails)
+--threshold 2.0 \                       # Manual CPM threshold when --auto-threshold=none (default: 1.0)
+
+# --- Appended estimate (choose one) ---
+--estimate-col K_count \                # Integer count of cell types with CPM ≥ threshold; robust & interpretable
+--estimate-col M_est_int \              # τ-based integer: round(N − τ·(N−1)), clamped ≥1 (no threshold)
+--estimate-col D1_shannon \             # Threshold-free 'effective' number: exp(Shannon entropy)
+--estimate-col D2_simpson \             # Threshold-free 'effective' number: 1 / Σ p_i^2
+# NOTE: Using 'K_count' auto-expands to exact name: K_count_<expr-col>≥<chosen-threshold>
+
+# --- Summary and plotting (optional) ---
+--summary-out per_gene_metrics.tsv \    # Write per-gene table with N, τ, M_est, M_est_int, D1, D2, K_count; sorted fewest→most
+--plot tau_vs_counts.png \              # PNG scatter: τ vs M_est, D1/D2, and K_count (diagnostic)
+
+# --- Data quality / grouping ---
+--min-rows-per-gene 1 \                 # Require at least this many cell-type rows per gene (default: 1)
+
+# --- Behavior notes ---
+# - Drops 'single_cell_type_gene' if present in input (unreliable flag).
+# - 'estimated_celltypes' is attached to every input row by per-gene merge.
+# - K_count can be 0 if no cell type exceeds the threshold (conservative, valid).
+# - Prefer TSV for large tables; use --sep $'\t' in Bash, or --sep "`t" in PowerShell.
+```
+#*I ran it like following*
+```
+python estimate_celltype_counts.py \
+  --in enrichV1_4_1clusters.tsv \
+  --out enrichV1_4_1clusters_tau_only.tsv \
+  --expr-col avg_nCPM \
+  --tau-col specificity_tau \
+  --gene-col Gene \
+  --celltype-col "Cell type" \
+  --auto-threshold none \
+  --estimate-col M_est_int \
+  --summary-out tau_only_metrics.tsv \
+  --sep $'\t'
+```
+And plotted it with universal plot maker 
+```url
+https://github.com/TharinduTS/Different_ways_to_measure_cell_specific_expression/blob/main/README.md#universal-interactive-plot-maker
+```
+With following runner
+
+run_universal_plot_maker_with_options.sh
+```bash
+#!/usr/bin/env bash
+# Usage:
+#   ./run_universal_plot_maker_with_options.sh [overrides...]
+# Example:
+#   ./run_universal_plot_maker_with_options.sh --file simple_enrich_1_clustor.tsv --out simple_enrich_1_clustor_plot.html
+
+set -euo pipefail
+
+# Resolve the directory of this script so we can find the Python file reliably
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+
+# Default arguments (can be overridden by CLI options appended below)
+args=(
+  --file enrichV1_4_1clusters.tsv          # REQUIRED: Input data file (TSV/CSV/etc.)
+  --out enrichV1_4_1clusters.html                      # Output HTML file name
+  --top 35000                                       # Top N rows to plot (default: 100)
+  --dedupe-policy mean                             # [max|mean|median|first] aggregation
+  # --log                                            # Use log scale on numeric axis
+  --linear                                       # Use linear scale instead (mutually exclusive with --log)
+  # --horizontal                                   # Horizontal bars (better for long labels)
+  --self-contained                                 # Embed Plotly.js for offline HTML
+  # --log-digits D2                                # Log-axis minor ticks: D1 (all) or D2 (2 & 5)
+  # --lang en-CA                                   # HTML lang attribute (default: en)
+  --initial-zoom 100                               # Initial number of bars visible on load
+  # --sep $'\t'                                    # Field separator (auto-detected if omitted)
+  --x-col "Gene name"                              # Column for X axis (numeric if horizontal)
+  --y-col "log2_enrichment_penalized"                       # Column for Y axis (categorical if horizontal)
+  --label-col "Gene name"                               # Explicit label column (optional)
+  # --value-col Score                              # Explicit numeric value column (optional)
+  --group-col "Cell type"                          # Column for color grouping (legend)
+  --search-col "Gene name"                         # Column used for search box
+  --details "Gene" "Gene name" "Cell type" "clusters_used" "avg_nCPM" "weight_sum" "specificity_tau" "Enrichment score" "log2_enrichment_penalized" "estimated_celltypes" # Extra columns
+)
+
+# Append any CLI overrides so the LAST occurrence of options wins
+args+=( "$@" )
+
+# Invoke the Python script with the collected arguments
+python3 "${script_dir}/universal_plot_maker.py" "${args[@]}"
+```
+run it like
+```bash
+./run_universal_plot_maker_with_options.sh --file enrichV1_4_1clusters_tau_only.tsv --out enrichV1_4_1clusters.html
+```
 #*
 
 #*
