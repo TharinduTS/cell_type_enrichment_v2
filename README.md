@@ -940,7 +940,7 @@ python filter_integration_long.py \
   --input combined_expression_data.tsv \
   --output integrated_filtered.tsv \
   --cluster-cols Tissue Cluster \
-  --min-cells 30 --min-genes 10000 \
+  --min-cells 30 --min-genes 8000 \
   --drop-mixed --ignore-case \
   --included-column "Annotation reliability" \
   --drop-included-values "low" "medium low" \
