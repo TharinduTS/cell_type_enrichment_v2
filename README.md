@@ -1541,7 +1541,9 @@ Then I ran it like
 ```
 ./run_celltype_enrichment_v1_4.sh --input-file integrated_filtered.tsv --output-file enrichV1_4_1clusters.tsv --min-clusters 1 --specificity-mode penalize
 ```
-And added estimated celltype counts with estimate_celltype_counts.py
+# 4) Estimate celltype counts
+
+Then added estimated celltype counts for each gene-celltype combination to get an idea in how many cell types would the gene be expressed in according to tau values with estimate_celltype_counts.py
 
 estimate_celltype_counts.py
 ```py
@@ -1945,7 +1947,9 @@ python estimate_celltype_counts.py \
   --summary-out tau_only_metrics.tsv \
   --sep $'\t'
 ```
-And plotted it with universal plot maker 
+# 5) Making interactive plots
+
+Finally I plotted it with universal plot maker 
 ```url
 https://github.com/TharinduTS/Different_ways_to_measure_cell_specific_expression/blob/main/README.md#universal-interactive-plot-maker
 ```
