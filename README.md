@@ -949,7 +949,7 @@ python filter_integration_long.py \
   --write-dropped dropped_clusters.tsv \
   --verbose
 ```
-This dropped a total of 161 clusters out of 1175 clusters exactly like HPA pipeline had done
+This dropped a total of 161 clusters out of 1175 clusters exactly like HPA pipeline had done when I used the same parameters (But in this version I set gene limit to 8000 to include platelets and  megakaryocytes)
 
 # 3) Cell type enrichment
 
