@@ -951,3 +951,418 @@ python filter_integration_long.py \
 ```
 This dropped a total of 161 clusters out of 1175 clusters exactly like HPA pipeline had done
 
+# 3) Calculations
+
+with the resulting dataset from the previous step containing multiple clusters for each gene*cell type combination, I wanted to caclulate weighted mean by cell count number (Just like what HPA did) for each Tissue*Cell type*Gene combination
+
+I did that with aggregate_within_dataset.py
+
+aggregate_within_dataset.py
+```py
+
+#!/usr/bin/env python3
+"""
+Within-Dataset aggregation (weighted mean by cell count):
+
+For each (dataset, cell type, gene), compute for one or more value columns:
+    aggregated_<col> = sum_j( Cell count_j * <col>_j ) / sum_j( Cell count_j )
+
+Defaults assume:
+  - Dataset: "Tissue"
+  - Cell type: "Cell type"
+  - Gene ID: "Gene"
+  - Values: ["nCPM"] (change with --agg-values, e.g., include "Read count")
+  - Weight: "Cell count"
+
+Features:
+  - Filter rows by "Included in aggregation" values (e.g., keep only 'yes').
+  - Case-insensitive comparisons (for included filter).
+  - NA handling policies for values and weights.
+  - Optional stats (sum of weights, number of clusters).
+  - Optional pivot to a wide matrix (genes/cell types × dataset × metric).
+  - Include extra passthrough columns (e.g., "Gene name") via --extra-cols.
+"""
+
+import argparse
+import sys
+import numpy as np
+import pandas as pd
+
+
+def parse_args():
+    p = argparse.ArgumentParser(
+        description="Compute weighted mean per (dataset, cell type, gene) using Cell count as weights for one or more value columns."
+    )
+    # I/O
+    p.add_argument("--input", "-i", required=True, help="Path to input TSV/CSV (long-format per gene per cluster).")
+    p.add_argument("--output", "-o", required=True, help="Path to output TSV/CSV (aggregated).")
+    p.add_argument("--delimiter", "-d", default="\t", help=r"Field delimiter (default: tab '\t').")
+    p.add_argument("--encoding", default="utf-8", help="File encoding (default: utf-8).")
+    p.add_argument("--quotechar", default='"', help='Quote character (default: ").')
+    p.add_argument("--escapechar", default=None, help="Escape character (optional).")
+    p.add_argument("--verbose", "-v", action="store_true", help="Print summary details.")
+
+    # Columns
+    p.add_argument("--dataset-col", default="Tissue", help="Column representing dataset (default: 'Tissue').")
+    p.add_argument("--cell-type-col", default="Cell type", help="Column for cell type (default: 'Cell type').")
+    p.add_argument("--gene-id-col", default="Gene", help="Column for gene IDs (default: 'Gene').")
+    p.add_argument("--weight-col", default="Cell count", help="Column for weights (default: 'Cell count').")
+    p.add_argument("--cluster-col", default="Cluster", help="Optional column for cluster ID (used in stats).")
+
+    # Values to aggregate (one or more)
+    p.add_argument("--agg-values", nargs="+", default=["nCPM"],
+                   help="One or more value columns to aggregate by weighted mean (e.g., nCPM \"Read count\").")
+
+    # NEW: extra passthrough columns (e.g., Gene name)
+    p.add_argument("--extra-cols", nargs="+",
+                   help="Additional columns to include in the output by taking the first non-NA value per group (e.g., \"Gene name\").")
+
+    # Optional: included filter
+    p.add_argument("--included-column", default="Included in aggregation",
+                   help="Column name to check row inclusion (default: 'Included in aggregation').")
+    p.add_argument("--require-included", nargs="+",
+                   help="Keep only rows where included-column equals one of these values (e.g., yes).")
+    p.add_argument("--ignore-case", action="store_true",
+                   help="Case-insensitive comparisons for included values.")
+
+    # Policies & output
+    p.add_argument("--value-na-policy", choices=["drop", "zero"], default="drop",
+                   help="How to handle NA in value columns during aggregation (default: drop).")
+    p.add_argument("--weight-na-policy", choices=["drop", "zero"], default="drop",
+                   help="How to handle NA in weight column during aggregation (default: drop).")
+    p.add_argument("--add-stats", action="store_true",
+                   help="Add stats columns: weight_sum and n_clusters.")
+    p.add_argument("--precision", type=int, default=6, help="Decimal rounding for aggregated values (default: 6).")
+
+    # Pivot options
+    p.add_argument("--pivot", choices=["none", "wide"], default="none",
+                   help="Output shape: none (long) or wide (pivot).")
+    p.add_argument("--pivot-axis", choices=["genes", "cell_types"], default="genes",
+                   help="For wide pivot: rows are genes (default) or cell types.")
+
+    return p.parse_args()
+
+
+def _normalize_series_text(s: pd.Series, lower: bool):
+    s = s.astype("string").str.strip()
+    return s.str.lower() if lower else s
+
+
+def main():
+    args = parse_args()
+
+    # Read input
+    try:
+        df = pd.read_csv(
+            args.input,
+            sep=args.delimiter,
+            encoding=args.encoding,
+            quotechar=args.quotechar,
+            escapechar=args.escapechar,
+            dtype="object",  # read as strings first
+            na_filter=True
+        )
+    except Exception as e:
+        print(f"ERROR: Failed to read input file '{args.input}': {e}", file=sys.stderr)
+        sys.exit(1)
+
+    # Validate required columns
+    required = [args.dataset_col, args.cell_type_col, args.gene_id_col, args.weight_col]
+    missing = [c for c in required if c not in df.columns]
+    # Also require all agg-values columns
+    missing += [c for c in args.agg_values if c not in df.columns]
+    if args.extra_cols:
+        missing += [c for c in args.extra_cols if c not in df.columns]
+    if missing:
+        print("ERROR: Missing required column(s): " + ", ".join(sorted(set(missing))), file=sys.stderr)
+        print("Available columns:\n  - " + "\n  - ".join(df.columns), file=sys.stderr)
+        sys.exit(2)
+
+    # Optional: included filter
+    if args.require_included:
+        if args.included_column not in df.columns:
+            print(f"ERROR: Included column '{args.included_column}' not found.", file=sys.stderr)
+            sys.exit(2)
+        keep_vals = [str(v).strip() for v in args.require_included]
+        if args.ignore_case:
+            keep_vals = [v.lower() for v in keep_vals]
+        inc_norm = _normalize_series_text(df[args.included_column], lower=args.ignore_case)
+        df = df[inc_norm.isin(keep_vals)]
+
+    # Numeric casts (robust) — weights
+    wt = pd.to_numeric(df[args.weight_col], errors="coerce")
+
+    # NA policies & mask: start from weights
+    mask_valid = pd.Series(True, index=df.index)
+    if args.weight_na_policy == "drop":
+        mask_valid &= wt.notna()
+    else:  # zero
+        wt = wt.fillna(0.0)
+
+    # Numeric casts (robust) — for each value column
+    val_num = {}
+    for col in args.agg_values:
+        vc = pd.to_numeric(df[col], errors="coerce")
+        if args.value_na_policy == "drop":
+            mask_valid &= vc.notna()
+        else:  # zero
+            vc = vc.fillna(0.0)
+        val_num[col] = vc
+
+    # Filtered DataFrame that will be used for grouping
+    df_valid = df[mask_valid].copy()
+    if df_valid.empty:
+        print("WARN: No rows remaining after NA policies/filtering.", file=sys.stderr)
+
+    # Attach numeric helper columns so groupby uses numeric data
+    df_valid["_weight_num"] = wt.loc[df_valid.index]
+    for col in args.agg_values:
+        df_valid[f"_{col}_num"] = val_num[col].loc[df_valid.index]
+        df_valid[f"_w_times_{col}"] = df_valid["_weight_num"] * df_valid[f"_{col}_num"]
+
+    # Group keys
+    keys = [args.dataset_col, args.cell_type_col, args.gene_id_col]
+
+    # Build aggregation dict dynamically
+    agg_dict = {"weight_sum": ("_weight_num", "sum")}
+    if args.cluster_col in df_valid.columns:
+        agg_dict["n_clusters"] = (args.cluster_col, "nunique")
+    else:
+        agg_dict["n_clusters"] = ("_weight_num", "size")  # fallback to row count
+
+    for col in args.agg_values:
+        agg_dict[f"weighted_sum_{col}"] = (f"_w_times_{col}", "sum")
+
+    # Aggregate passthrough extra columns (first non-NA per group)
+    def _first_valid(s):
+        s = s.dropna()
+        return s.iloc[0] if len(s) else pd.NA
+
+    extra_results = {}
+    if args.extra_cols:
+        for ex in args.extra_cols:
+            extra_results[ex] = (ex, _first_valid)
+
+    grouped = df_valid.groupby(keys, dropna=False).agg(**agg_dict, **extra_results)
+
+    # Compute weighted means safely (denom > 0 → num/denom, else NaN), and round
+    aggregated = grouped.copy()
+    denom = aggregated["weight_sum"]
+    for col in args.agg_values:
+        num = aggregated[f"weighted_sum_{col}"]
+        outcol = f"aggregated_{col}"
+        aggregated[outcol] = np.where(denom > 0, num / denom, np.nan)
+        aggregated[outcol] = aggregated[outcol].round(args.precision)
+
+    # Prepare LONG output by default (include extras if requested)
+    out_cols = keys.copy()
+    if args.extra_cols:
+        out_cols += args.extra_cols  # e.g., "Gene name"
+    out_cols += [f"aggregated_{col}" for col in args.agg_values]
+    if args.add_stats:
+        out_cols += ["weight_sum", "n_clusters"]
+
+    result_long = aggregated.reset_index()[out_cols]
+
+    # Optional pivot to wide format
+    if args.pivot == "wide":
+        # Melt metrics to a single column, then pivot
+        metric_cols = [f"aggregated_{col}" for col in args.agg_values]
+        id_vars = keys + (args.extra_cols if args.extra_cols else [])
+        if args.add_stats:
+            id_vars += ["weight_sum", "n_clusters"]
+        long_melt = result_long.melt(id_vars=id_vars,
+                                     value_vars=metric_cols,
+                                     var_name="metric",
+                                     value_name="value")
+        # Simplify metric names: 'aggregated_nCPM' -> 'nCPM', etc.
+        long_melt["metric"] = long_melt["metric"].str.replace(r"^aggregated_", "", regex=True)
+
+        if args.pivot_axis == "genes":
+            pivot = long_melt.pivot_table(
+                index=[args.gene_id_col] + ([c for c in args.extra_cols if c != args.gene_id_col] if args.extra_cols else []),
+                columns=[args.dataset_col, args.cell_type_col, "metric"],
+                values="value",
+                aggfunc="first"
+            )
+            pivot.columns = ["{}|{}|{}".format(str(ds), str(ct), str(m)) for (ds, ct, m) in pivot.columns]
+            pivot = pivot.reset_index()
+        else:
+            pivot = long_melt.pivot_table(
+                index=[args.cell_type_col],
+                columns=[args.dataset_col, args.gene_id_col, "metric"],
+                values="value",
+                aggfunc="first"
+            )
+            pivot.columns = ["{}|{}|{}".format(str(ds), str(g), str(m)) for (ds, g, m) in pivot.columns]
+            pivot = pivot.reset_index()
+
+        try:
+            pivot.to_csv(args.output, sep=args.delimiter, encoding=args.encoding, index=False)
+            if args.verbose:
+                print(f"[INFO] Wrote wide matrix to '{args.output}' with shape {pivot.shape}")
+        except Exception as e:
+            print(f"ERROR: Failed to write output file '{args.output}': {e}", file=sys.stderr)
+            sys.exit(3)
+        return
+
+    # Write LONG table
+    try:
+        result_long.to_csv(args.output, sep=args.delimiter, encoding=args.encoding, index=False)
+        if args.verbose:
+            groups = len(aggregated)
+            zero_denom = int((aggregated["weight_sum"] <= 0).sum())
+            print(f"[INFO] Aggregated {groups} (dataset, cell type, gene) groups")
+            if zero_denom:
+                print(f"[WARN] {zero_denom} groups had weight_sum <= 0; aggregated values set to NaN.")
+            print(f"[INFO] Wrote aggregated table to '{args.output}' with {len(result_long)} rows")
+    except Exception as e:
+        print(f"ERROR: Failed to write output file '{args.output}': {e}", file=sys.stderr)
+        sys.exit(3)
+
+
+if __name__ == "__main__":
+    main()
+```
+CLI help
+```txt
+
+usage: aggregate_within_dataset.py [-h] --input INPUT --output OUTPUT
+                                   [--delimiter DELIMITER] [--encoding ENCODING]
+                                   [--quotechar QUOTECHAR] [--escapechar ESCAPECHAR]
+                                   [--verbose] [--dataset-col DATASET_COL]
+                                   [--cell-type-col CELL_TYPE_COL] [--gene-id-col GENE_ID_COL]
+                                   [--weight-col WEIGHT_COL] [--cluster-col CLUSTER_COL]
+                                   [--agg-values AGG_VALUES [AGG_VALUES ...]]
+                                   [--extra-cols EXTRA_COLS [EXTRA_COLS ...]]
+                                   [--included-column INCLUDED_COLUMN]
+                                   [--require-included REQUIRE_INCLUDED [REQUIRE_INCLUDED ...]]
+                                   [--ignore-case]
+                                   [--value-na-policy {drop,zero}]
+                                   [--weight-na-policy {drop,zero}]
+                                   [--add-stats] [--precision PRECISION]
+                                   [--pivot {none,wide}] [--pivot-axis {genes,cell_types}]
+
+Compute weighted mean per (dataset, cell type, gene) using Cell count as weights.
+```
+```txt
+Required
+
+--input, -i — Path to input TSV/CSV (long-format per gene per cluster).
+--output, -o — Path to output TSV/CSV (aggregated).
+
+Columns
+
+--dataset-col — Dataset column (default: Tissue).
+--cell-type-col — Cell type column (default: "Cell type").
+--gene-id-col — Gene ID column (default: Gene).
+--weight-col — Weight column (default: "Cell count").
+--cluster-col — Cluster ID column (optional; used to count contributing clusters).
+
+Values to aggregate
+
+--agg-values — One or more value columns to aggregate by weighted mean (default: nCPM).
+Example: --agg-values nCPM "Read count"
+
+Extra passthrough columns
+
+--extra-cols — Additional columns to include in the output by taking the first non‑NA per group.
+Example: --extra-cols "Gene name" "Annotation reliability"
+
+Included filter
+
+--included-column — Column to check inclusion (default: "Included in aggregation").
+--require-included — Keep only rows with these values (e.g., yes).
+--ignore-case — Case-insensitive matching for included values.
+
+NA handling & output
+
+--value-na-policy — How to handle NA in value columns: drop (default) | zero.
+--weight-na-policy — How to handle NA in weights: drop (default) | zero.
+--add-stats — Add weight_sum (∑ weights) and n_clusters (distinct clusters) to output.
+--precision — Decimal rounding for aggregated values (default: 6).
+
+Format & pivot
+
+--delimiter, -d — Field delimiter (default: tab).
+--encoding — File encoding (default: UTF‑8).
+--quotechar, --escapechar — CSV parsing options.
+--pivot — Output shape: none (long, default) | wide (pivoted matrix).
+--pivot-axis — For wide pivot, rows are genes (default) or cell_types.
+--verbose, -v — Print summary details.
+```
+Examples
+
+HPA‑style weighted mean of nCPM by Cell count (long output) + include Gene name:
+```bash
+
+python aggregate_within_dataset.py \
+  --input integrated_filtered.tsv \
+  --output aggregated_within_dataset.tsv \
+  --dataset-col Tissue \
+  --cell-type-col "Cell type" \
+  --gene-id-col Gene \
+  --weight-col "Cell count" \
+  --agg-values nCPM \
+  --extra-cols "Gene name" \
+  --require-included yes \
+  --ignore-case \
+  --add-stats \
+  --precision 6 \
+  --verbose
+```
+Aggregate nCPM and Read count in one run:
+```bash
+
+python aggregate_within_dataset.py \
+  --input integrated_filtered.tsv \
+  --output aggregated_within_dataset.tsv \
+  --dataset-col Tissue \
+  --cell-type-col "Cell type" \
+  --gene-id-col Gene \
+  --weight-col "Cell count" \
+  --agg-values nCPM "Read count" \
+  --extra-cols "Gene name" \
+  --require-included yes --ignore-case \
+  --add-stats --precision 6 --verbose
+```
+Wide matrix (rows=genes, columns=dataset|cell type|metric):
+```bash
+
+python aggregate_within_dataset.py \
+  --input integrated_filtered.tsv \
+  --output aggregated_matrix.tsv \
+  --dataset-col Tissue \
+  --cell-type-col "Cell type" \
+  --gene-id-col Gene \
+  --weight-col "Cell count" \
+  --agg-values nCPM "Read count" \
+  --extra-cols "Gene name" \
+  --require-included yes --ignore-case \
+  --pivot wide --pivot-axis genes \
+  --precision 6 --verbose
+```
+Notes
+
+Weighting: All metrics in --agg-values are weighted by --weight-col (typically "Cell count").
+Grouping keys: (dataset-col, cell-type-col, gene-id-col).
+Zero weights: Groups with weight_sum <= 0 yield NaN for aggregated values (logged with --verbose).
+Quoting: Quote argument values that contain spaces: "Cell type", "Gene name", "Included in aggregation".
+
+#*I ran it like following*
+```bash
+python aggregate_within_dataset.py \
+  --input integrated_filtered.tsv \
+  --output aggregated_within_dataset.tsv \
+  --dataset-col Tissue \
+  --cell-type-col "Cell type" \
+  --gene-id-col Gene \
+  --weight-col "Cell count" \
+  --agg-values nCPM \
+  --extra-cols "Gene name" \
+  --require-included yes \
+  --ignore-case \
+  --add-stats \
+  --precision 6 \
+  --verbose
+```
