@@ -953,7 +953,7 @@ This dropped a total of 161 clusters out of 1175 clusters exactly like HPA pipel
 
 # 3) Calculations
 
-with the resulting dataset from the previous step containing multiple clusters for each gene*cell type combination, I wanted to caclulate weighted mean by cell count number (Just like what HPA did) for each Tissue*Cell type*Gene combination
+1) First, with the resulting dataset from the previous step containing multiple clusters for each gene-cell type combination, I wanted to caclulate weighted mean by cell count number (Just like what HPA did) for each Tissue*Cell type*Gene combination
 
 I did that with aggregate_within_dataset.py
 
