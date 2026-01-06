@@ -1542,10 +1542,15 @@ Then I ran it like
 ./run_celltype_enrichment_v1_4.sh --input-file integrated_filtered.tsv --output-file enrichV1_4_1clusters.tsv --min-clusters 1 --specificity-mode penalize
 ```
 #*
+
 #*
+
 #*
+
 #*
+
 #*
+
 #*****extra**********************************************************************************************************************************************************************************
 1) First, with the resulting dataset from the previous step containing multiple clusters for each gene-cell type combination, I wanted to caclulate weighted mean by cell count number (Just like what HPA did) for each Tissue*Cell type*Gene combination
 
