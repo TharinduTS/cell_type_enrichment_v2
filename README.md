@@ -22,6 +22,7 @@ source ~/envs/scanpy/bin/activate
 
 # 1) Combining datasets
 
+# 1-I Introduction
 I am using two main datasets available here
 
 HPA has,
@@ -55,6 +56,8 @@ adipose tissue  c-0     mesothelial cells       mesothelial cells       speciali
 adipose tissue  c-1     adipocytes      mature adipocytes       mesenchymal cells       6996    yes     high
 adipose tissue  c-2     adipocytes      mature adipocytes       mesenchymal cells       6993    yes     high
 ```
+
+# 1-II Merge script
 Because I need cell count data for my analysis, I start by combining these dataframes to add columns "Cell count" , "Included in aggregation", "Annotation reliability" from rna_single_cell_clusters.tsv to rna_single_cell_cluster.tsv matching by Cluster.
 I did this with merge_tsv_by_keys.py
 
@@ -241,6 +244,7 @@ def main():
 if __name__ == "__main__":
     main()
 ```
+# 1-III CLI help
 CLI help
 ```txt
 --left <filename>
@@ -314,7 +318,7 @@ python merge_tsv_by_keys.py \
   --right-cols "Cell count,Annotation reliability" \
   --out merged.tsv
 ```
-
+# 1-IV Used command
 #*I Used the following command*
 ```bash
 python merge_tsv_by_keys.py \
@@ -336,6 +340,7 @@ ENSG00000000003 TSPAN6  ovary   c-4     vascular endothelial cells      164     
 ```
 # 2) Filtering combined dataset
 
+# 2-I Introduction
 Then I wanted to filter data that are not reliable. 
 
 Human Protein atlas explains their filtration procedure as following
@@ -346,6 +351,7 @@ Just dropping rows with "Included in aggregation"==no (With -R "Included in aggr
 
 Following script tries to replicate it 
 
+# 2-II Filtering Script
 filter_integration_long.py
 ```py
 
@@ -793,7 +799,7 @@ if __name__ == "__main__":
     main()
 
 ```
-CLI help
+# 2-III CLI help
 ```txt
 
 usage: filter_integration_long.py [-h] --input INPUT --output OUTPUT
@@ -934,6 +940,7 @@ examples:
     --verbose
 
 ```
+# 2-IV Run command
 #*I am running it like following*
 ```bash
 python filter_integration_long.py \
@@ -953,8 +960,10 @@ This dropped a total of 161 clusters out of 1175 clusters exactly like HPA pipel
 
 # 3) Cell type enrichment
 
+# 3-I Introduction
 Then I used my script celltype_enrichment_v1_4.py to calculate weighted nCPM by cell count, celltype enrichment, select top gene-cell type combinations, enforce median scaling and safeguards
 
+# 3-II Celltype enrichment script
 celltype_enrichment_v1_4.py
 
 ```py
@@ -1449,6 +1458,7 @@ def main():
 if __name__ == "__main__":
     main()
 ```
+# 3-III Celltype enrichment runner
 I ran it with the following runner
 
 run_celltype_enrichment_v1_4.sh
@@ -1537,15 +1547,17 @@ args+=("$@")
 python3 "${script_dir}/celltype_enrichment_v1_4.py" "${args[@]}"
 
 ```
-# 3-2 Run command
+# 3-IV Run command
 Then I ran it like
 ```
 ./run_celltype_enrichment_v1_4.sh --input-file integrated_filtered.tsv --output-file enrichV1_4_1clusters.tsv --min-clusters 1 --min-count 50 --specificity-mode penalize --min-specificity 1
 ```
 # 4) Estimate celltype counts
 
+# 4-I Introduction
 Then added estimated celltype counts for each gene-celltype combination to get an idea in how many cell types would the gene be expressed in according to tau values with estimate_celltype_counts.py
 
+# 4-II estimate celltype counts script
 estimate_celltype_counts.py
 ```py
 
@@ -1868,7 +1880,7 @@ def main():
 if __name__ == "__main__":
     main()
 ```
-CLI help
+# 4-III CLI help
 ```txt
 
 # estimate_celltype_counts.py — User Guide (CLI Options)
@@ -1934,6 +1946,7 @@ python estimate_celltype_counts.py \
 # - K_count can be 0 if no cell type exceeds the threshold (conservative, valid).
 # - Prefer TSV for large tables; use --sep $'\t' in Bash, or --sep "`t" in PowerShell.
 ```
+# 4-IV Run command
 #*I ran it like following*
 ```
 python estimate_celltype_counts.py \
@@ -1950,10 +1963,13 @@ python estimate_celltype_counts.py \
 ```
 # 5) Making interactive plots
 
+# 5-I Introduction
 Finally I plotted it with universal plot maker 
+# 5-II universal plot maker script
 ```url
 https://github.com/TharinduTS/Different_ways_to_measure_cell_specific_expression/blob/main/README.md#universal-interactive-plot-maker
 ```
+# 5-III universal plot maker Runner
 With following runner
 
 run_universal_plot_maker_with_options.sh
@@ -1998,6 +2014,7 @@ args+=( "$@" )
 # Invoke the Python script with the collected arguments
 python3 "${script_dir}/universal_plot_maker.py" "${args[@]}"
 ```
+# 5-IV Run command
 run it like
 ```bash
 ./run_universal_plot_maker_with_options.sh --file enrichV1_4_1clusters_tau_only.tsv --out enrichV1_4_1clusters.html
