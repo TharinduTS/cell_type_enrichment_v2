@@ -1824,8 +1824,8 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 # Default arguments (can be overridden by CLI options appended below)
 args=(
-  --file enrichV1_4_1clusters.tsv          # REQUIRED: Input data file (TSV/CSV/etc.)
-  --out enrichV1_4_1clusters.html                      # Output HTML file name
+  --file ranked_specific_global.tsv          # REQUIRED: Input data file (TSV/CSV/etc.)
+  --out ranked_specific_global.html                      # Output HTML file name
   --top 35000                                       # Top N rows to plot (default: 100)
   --dedupe-policy mean                             # [max|mean|median|first] aggregation
   # --log                                            # Use log scale on numeric axis
@@ -1842,7 +1842,7 @@ args=(
   # --value-col Score                              # Explicit numeric value column (optional)
   --group-col "Cell type"                          # Column for color grouping (legend)
   --search-col "Gene name"                         # Column used for search box
-  --details "Gene" "Gene name" "Cell type" "clusters_used" "avg_nCPM" "weight_sum" "specificity_tau" "Enrichment score" "log2_enrichment_penalized" "estimated_celltypes" # Extra columns
+  --details "Gene" "Gene name" "Cell type" "avg_nCPM" "specificity_tau" "log2_enrichment_penalized" "top_percent_celltype_count" "top_percent_celltypes" "rank_within_celltype" "overall_rank" # Extra columns
 )
 
 # Append any CLI overrides so the LAST occurrence of options wins
@@ -1854,7 +1854,7 @@ python3 "${script_dir}/universal_plot_maker.py" "${args[@]}"
 # 5-IV Run command
 run it like
 ```bash
-./run_universal_plot_maker_with_options.sh --file enrichV1_4_1clusters_tau_only.tsv --out enrichV1_4_1clusters.html
+./run_universal_plot_maker_with_options.sh --file ranked_specific_global.tsv --out ranked_genes.html
 ```
 #*
 
