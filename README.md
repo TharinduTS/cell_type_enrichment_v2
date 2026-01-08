@@ -1854,9 +1854,7 @@ Options:
 # 5-IV Run command
 #*I ran it like following*
 ```
-
-
-ython rank_genes.py \
+python rank_genes.py \
   --input enrichV1_4_1clusters.tsv \
   --output ranked_specific_global.tsv \
   --top-percent 15 \
