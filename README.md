@@ -2016,8 +2016,11 @@ python3 "${script_dir}/universal_plot_maker.py" "${args[@]}"
 # 6-IV Run command
 run it like
 ```bash
-./run_universal_plot_maker_with_options.sh --file selected_ranked_genes.tsv --out selected_ranked_genes.html
+./run_universal_plot_maker_with_options.sh --file selected_ranked_genes.tsv --top 35000 --out selected_ranked_genes.html
 ```
+# ****Keep the --top value equal to the head -n value used above. Otherwise it will just plot the top n rows with highest Y axis value and mess up the order****
+
+
 #*
 
 #*
