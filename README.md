@@ -1696,9 +1696,9 @@ This code plots the distribution, Give you the top percentage of rows with posit
 Percentage of rows with positive log2_enrichment_penalized: 16.28%
 ```
 log2_enrichment_penalized_distribution.png
-```png
+
 <img width="1000" height="700" alt="log2_enrichment_penalized_distribution" src="https://github.com/user-attachments/assets/d45a3e86-67d6-4df5-bc3e-966978375378" />
-```
+
 
 
 
