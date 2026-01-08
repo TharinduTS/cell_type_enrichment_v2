@@ -1864,10 +1864,13 @@ Options:
 python rank_genes.py \
   --input enrichV1_4_1clusters.tsv \
   --output ranked_genes.tsv \
-  --top-percent 20 \
+  --top-percent 100 \
   --min-top-rows 50000 \
   --top-col "log2_enrichment_penalized" \
   --sorting-col "log2_enrichment_penalized" \
+  --unique-celltypes \
+  --drop-na \
+  --drop-negatives \
   --verbose \
   --include-cols Gene "Gene name" "Cell type" avg_nCPM specificity_tau \
                 "Enrichment score (tau penalized)" "log2_enrichment_penalized"
