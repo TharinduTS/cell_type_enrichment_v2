@@ -1552,8 +1552,163 @@ Then I ran it like
 ```
 ./run_celltype_enrichment_v1_4.sh --input-file integrated_filtered.tsv --output-file enrichV1_4_1clusters.tsv --min-clusters 1 --min-count 50 --specificity-mode penalize --min-specificity 1
 ```
-# 4) Rank genes and estimate celltype counts
+# 4) Visualizing Enrichment Distributions
 
+# 4-I Introduction
+
+This section provides a simple CLI tool to visualize the distribution of values in any numeric column (e.g., log2_enrichment_penalized) from a TSV/CSV file. It adds:
+
+A horizontal line at 0
+Grey shading for the depletion (negative) zone
+Clear labels for Enrichment and Depletion
+The ability to highlight near-zero rows with red vertical markers
+A function to report the % of positive values
+Optional export of the near-zero rows to a CSV
+
+Why this matters
+
+log₂ > 0 → Enriched (observed higher than expected)
+log₂ < 0 → Depleted (observed lower than expected)
+log₂ = 0 → Neutral (observed ≈ expected; enrichment score = 1)
+
+This script makes it easy to see that boundary and inspect data near the neutral point.
+
+# 4-II Script
+
+plot_distribution.py
+```py
+
+#!/usr/bin/env python3
+import argparse
+import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+def calculate_positive_percentage(series):
+    total = len(series)
+    positive_count = (series > 0).sum()
+    return (positive_count / total) * 100
+
+def get_rows_near_zero(df, column, n):
+    # Drop NA values and sort by absolute distance from zero
+    df_clean = df.loc[df[column].notna()].copy()
+    df_clean["abs_val"] = df_clean[column].abs()
+    return df_clean.sort_values("abs_val").drop(columns="abs_val").head(n)
+
+def main():
+    parser = argparse.ArgumentParser(description="Visualize distribution and analyze enrichment values.")
+    parser.add_argument("-i", "--input", required=True, help="Path to input CSV/TSV file")
+    parser.add_argument("-c", "--column", required=True, help="Column name to plot distribution")
+    parser.add_argument("-d", "--delimiter", default="\t", help="Delimiter (default: tab)")
+    parser.add_argument("-o", "--output", default=None, help="Output plot filename")
+    parser.add_argument("--near-zero", type=int, default=0, help="Show N rows closest to zero")
+    parser.add_argument("--export-near-zero", default=None, help="Export near-zero rows to CSV file")
+    args = parser.parse_args()
+
+    # Load data
+    df = pd.read_csv(args.input, delimiter=args.delimiter)
+
+    if args.column not in df.columns:
+        print(f"Error: Column '{args.column}' not found. Available columns: {list(df.columns)}")
+        return
+
+    # Positive percentage
+    pct_positive = calculate_positive_percentage(df[args.column])
+    print(f"Percentage of rows with positive {args.column}: {pct_positive:.2f}%")
+
+    # Plot
+    sns.set(style="whitegrid")
+    plt.figure(figsize=(10, 7))
+    ax = sns.histplot(df[args.column], kde=True, color="blue", bins=30)
+
+    # Vertical line at 0
+    plt.axvline(0, color="black", linestyle="--", linewidth=1)
+
+    # Get axis limits after plotting
+    ymin, ymax = ax.get_ylim()
+    xmin, xmax = ax.get_xlim()
+
+    # Shade depletion zone
+    plt.axvspan(xmin, 0, color="grey", alpha=0.2)
+
+    # Labels for zones
+    plt.text(xmin + (xmax - xmin) * 0.05, ymax * 0.92, "Depletion", color="grey", fontsize=12)
+    plt.text(xmin + (xmax - xmin) * 0.70, ymax * 0.92, "Enrichment", color="blue", fontsize=12)
+
+    # Highlight near-zero rows if requested
+    if args.near_zero > 0:
+        near_zero_rows = get_rows_near_zero(df, args.column, args.near_zero)
+        for val in near_zero_rows[args.column]:
+            plt.axvline(val, color="red", linestyle=":", linewidth=1)
+        print(f"\nTop {args.near_zero} rows closest to zero in {args.column}:")
+        print(near_zero_rows)
+
+        # Export if requested
+        if args.export_near_zero:
+            near_zero_rows.to_csv(args.export_near_zero, index=False)
+            print(f"Near-zero rows exported to {args.export_near_zero}")
+
+    # Title and labels
+    plt.title(f"Distribution of {args.column}")
+    plt.xlabel(args.column)
+    plt.ylabel("Frequency")
+
+    # Save plot
+    output_file = args.output if args.output else f"{args.column}_distribution.png"
+    plt.tight_layout()
+    plt.savefig(output_file)
+    print(f"Plot saved as {output_file}")
+
+if __name__ == "__main__":
+    main()
+```
+# 4-III CLI Help
+```txt
+
+usage: plot_distribution.py [-h] -i INPUT -c COLUMN [-d DELIMITER] [-o OUTPUT]
+                            [--near-zero NEAR_ZERO] [--export-near-zero EXPORT_NEAR_ZERO]
+
+Visualize distribution and analyze enrichment values.
+
+options:
+  -h, --help            show this help message and exit
+  -i INPUT, --input INPUT
+                        Path to input CSV/TSV file
+  -c COLUMN, --column COLUMN
+                        Column name to plot distribution
+  -d DELIMITER, --delimiter DELIMITER
+                        Delimiter (default: tab)
+  -o OUTPUT, --output OUTPUT
+                        Output plot filename
+  --near-zero NEAR_ZERO
+                        Show N rows closest to zero
+  --export-near-zero EXPORT_NEAR_ZERO
+                        Export near-zero rows to CSV file
+```
+# 4-IV Run
+
+#* I ran it like following
+```bash
+python plot_distribution.py -i enrichV1_4_1clusters_w_by_RC_tau_only.tsv -c log2_enrichment_penalized --near-zero 10 -o log2_enrichment_penalized_distribution.png
+```
+This code plots the distribution, Give you the top percentage of rows with positive values and shows you the rows around that value
+```bash
+Percentage of rows with positive log2_enrichment_penalized: 16.28%
+```
+log2_enrichment_penalized_distribution.png
+```png
+<img width="1000" height="700" alt="log2_enrichment_penalized_distribution" src="https://github.com/user-attachments/assets/d45a3e86-67d6-4df5-bc3e-966978375378" />
+```
+
+
+
+
+
+
+
+
+
+# ******************************************************************
 # 4-I Introduction
 This script ranks gene–cell type rows to surface cell-type–specific genes at the very top. It:
 
