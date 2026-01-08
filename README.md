@@ -1936,7 +1936,7 @@ overall_rank — global rank (fewest cell types first → highest score).
 ```
 
 python rank_genes.py \
-  --input enrichV1_4_1clusters_w_by_RC.tsv \
+  --input enrichV1_4_1clusters.tsv \
   --output ranked_genes.tsv \
   --top-percent 15 \
   --min-top-rows 50000 \
@@ -1956,7 +1956,14 @@ python rank_genes.py \
 # 6) Making interactive plots
 
 # 6-I Introduction
-Finally I plotted it with universal plot maker 
+ 
+
+#* First I select the number of rows I need in the plot like this
+```bash
+head -n 35000 ranked_genes.tsv > selected_ranked_genes.tsv
+```
+and Finally I plotted it with universal plot maker
+
 # 6-II universal plot maker script
 ```url
 https://github.com/TharinduTS/Different_ways_to_measure_cell_specific_expression/blob/main/README.md#universal-interactive-plot-maker
@@ -1981,7 +1988,7 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 args=(
   --file ranked_genes.tsv          # REQUIRED: Input data file (TSV/CSV/etc.)
   --out ranked_specific_global.html                      # Output HTML file name
-  --top 35000                                       # Top N rows to plot (default: 100)
+  # --top 35000                                       # Top N rows to plot (default: 100)
   --dedupe-policy mean                             # [max|mean|median|first] aggregation
   # --log                                            # Use log scale on numeric axis
   --linear                                       # Use linear scale instead (mutually exclusive with --log)
@@ -2009,7 +2016,7 @@ python3 "${script_dir}/universal_plot_maker.py" "${args[@]}"
 # 6-IV Run command
 run it like
 ```bash
-./run_universal_plot_maker_with_options.sh --file ranked_genes.tsv --out ranked_genes.html
+./run_universal_plot_maker_with_options.sh --file selected_ranked_genes.tsv --out selected_ranked_genes.html
 ```
 #*
 
