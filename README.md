@@ -1695,21 +1695,15 @@ This code plots the distribution, Give you the top percentage of rows with posit
 ```bash
 Percentage of rows with positive log2_enrichment_penalized: 16.28%
 ```
+I am using 15% of the top values for gene ranking in section 5 based on this
+
 log2_enrichment_penalized_distribution.png
 
 <img width="1000" height="700" alt="log2_enrichment_penalized_distribution" src="https://github.com/user-attachments/assets/d45a3e86-67d6-4df5-bc3e-966978375378" />
 
+# 5) Rank genes on cell specific expresion
 
-
-
-
-
-
-
-
-
-# ******************************************************************
-# 4-I Introduction
+# 5-I Introduction
 This script ranks gene–cell type rows to surface cell-type–specific genes at the very top. It:
 
 Builds a global top‑X% subset of rows using a chosen score (e.g., log2_enrichment_penalized).
@@ -1729,7 +1723,7 @@ rank_within_celltype, overall_rank.
 
 ✅ Designed to put genes expressed in exactly one cell type (in the global top subset) at the top of the ranking
 
-# 4-II Rank genes and estimate celltype counts script
+# 5-II Rank genes and estimate celltype counts script
 rank_genes.py
 ```py
 
@@ -1893,7 +1887,7 @@ if __name__ == "__main__":
     main()
 
 ```
-# 4-III CLI help
+# 5-III CLI help
 ```txt
 Required:
 
@@ -1937,14 +1931,14 @@ top_percent_celltypes — list of those cell types.
 rank_within_celltype — position within its cell type based on overall rank (1, 2, 3…).
 overall_rank — global rank (fewest cell types first → highest score).
 ```
-# 4-IV Run command
+# 5-IV Run command
 #*I ran it like following*
 ```
 
 python rank_genes.py \
   --input enrichV1_4_1clusters_w_by_RC.tsv \
   --output ranked_specific_global.tsv \
-  --top-percent 25 \
+  --top-percent 15 \
   --min-top-rows 50000 \
   --top-col "log2_enrichment_penalized" \
   --sorting-col "log2_enrichment_penalized" \
@@ -1953,7 +1947,13 @@ python rank_genes.py \
   --include-cols Gene "Gene name" "Cell type" avg_nCPM specificity_tau "Enrichment score (tau penalized)" "log2_enrichment_penalized"
 
 ```
-# 5) Making interactive plots
+
+
+
+
+
+
+# 6) Making interactive plots
 
 # 5-I Introduction
 Finally I plotted it with universal plot maker 
