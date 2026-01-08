@@ -1868,10 +1868,6 @@ python rank_genes.py \
   --min-top-rows 50000 \
   --top-col "log2_enrichment_penalized" \
   --sorting-col "log2_enrichment_penalized" \
-  --unique-celltypes \
-  --drop-zero-only \
-  --drop-na \
-  --drop-negatives \
   --verbose \
   --include-cols Gene "Gene name" "Cell type" avg_nCPM specificity_tau \
                 "Enrichment score (tau penalized)" "log2_enrichment_penalized"
