@@ -1717,6 +1717,7 @@ This is useful for ensuring that only meaningful enrichment scores are considere
 rank_genes.py
 ```py
 
+
 #!/usr/bin/env python3
 """
 Rank genes globally and estimate cell-type counts based on enrichment scores.
@@ -1738,12 +1739,14 @@ import pandas as pd
 import numpy as np
 
 def to_numeric_safe(s, convert_inf_to_nan=True):
+    """Coerce to numeric, optionally converting +/-inf to NaN."""
     s = pd.to_numeric(s, errors="coerce")
     if convert_inf_to_nan:
         s = s.replace([np.inf, -np.inf], np.nan)
     return s
 
 def normalize_headers(df):
+    """Trim and normalize header whitespace."""
     return df.rename(columns=lambda x: " ".join(str(x).strip().split()))
 
 def main():
@@ -1761,7 +1764,10 @@ def main():
     parser.add_argument("--min-celltype-count", type=int, default=0, help="Minimum cell-type count to keep.")
     parser.add_argument("--drop-na", action="store_true", help="Drop rows with NaN in top/sorting columns.")
     parser.add_argument("--drop-negatives", action="store_true", help="Drop rows with negative values in top/sorting columns.")
-    parser.add_argument("--include-cols", nargs="+", default=["Gene","Gene name","Cell type","avg_nCPM","specificity_tau","Enrichment score (tau penalized)","log2_enrichment_penalized"], help="Columns to include in output.")
+    parser.add_argument("--include-cols", nargs="+", default=[
+        "Gene","Gene name","Cell type","avg_nCPM","specificity_tau",
+        "Enrichment score (tau penalized)","log2_enrichment_penalized"
+    ], help="Columns to include in output.")
     parser.add_argument("--verbose", action="store_true", help="Print summary info.")
     args = parser.parse_args()
 
@@ -1770,7 +1776,7 @@ def main():
     df = normalize_headers(df)
 
     # Validate columns
-    for col in [args.gene_col, args.celltype_col, args.top-col, args.sorting_col]:
+    for col in [args.gene_col, args.celltype_col, args.top_col, args.sorting_col]:
         if col not in df.columns:
             sys.exit(f"ERROR: Missing column {col}")
 
@@ -1854,9 +1860,10 @@ Options:
 # 5-IV Run command
 #*I ran it like following*
 ```
+
 python rank_genes.py \
   --input enrichV1_4_1clusters.tsv \
-  --output ranked_specific_global.tsv \
+  --output ranked_genes.tsv \
   --top-percent 15 \
   --min-top-rows 50000 \
   --top-col "log2_enrichment_penalized" \
