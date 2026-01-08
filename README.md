@@ -1693,13 +1693,14 @@ python plot_distribution.py -i enrichV1_4_1clusters.tsv.tsv -c log2_enrichment_p
 ```
 This code plots the distribution, Give you the top percentage of rows with positive values and shows you the rows around that value
 ```bash
-Percentage of rows with positive log2_enrichment_penalized: 16.28%
+Percentage of rows with positive log2_enrichment_penalized: 18.17%
 ```
-I am using 15% of the top values for gene ranking in section 5 based on this
+I am using 20% of the top values for gene ranking in section 5 based on this
 
 log2_enrichment_penalized_distribution.png
 
-<img width="1000" height="700" alt="log2_enrichment_penalized_distribution" src="https://github.com/user-attachments/assets/d45a3e86-67d6-4df5-bc3e-966978375378" />
+<img width="1000" height="700" alt="log2_enrichment_penalized_distribution" src="https://github.com/user-attachments/assets/ad770994-6ef6-4b93-a0b4-f0fe4915e96b" />
+
 
 # 5) Rank genes on cell specific expresion
 
@@ -1860,11 +1861,10 @@ Options:
 # 5-IV Run command
 #*I ran it like following*
 ```
-
 python rank_genes.py \
   --input enrichV1_4_1clusters.tsv \
   --output ranked_genes.tsv \
-  --top-percent 15 \
+  --top-percent 20 \
   --min-top-rows 50000 \
   --top-col "log2_enrichment_penalized" \
   --sorting-col "log2_enrichment_penalized" \
