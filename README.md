@@ -1689,7 +1689,7 @@ options:
 
 #* I ran it like following
 ```bash
-python plot_distribution.py -i enrichV1_4_1clusters_w_by_RC_tau_only.tsv -c log2_enrichment_penalized --near-zero 10 -o log2_enrichment_penalized_distribution.png
+python plot_distribution.py -i enrichV1_4_1clusters.tsv.tsv -c log2_enrichment_penalized --near-zero 10 -o log2_enrichment_penalized_distribution.png
 ```
 This code plots the distribution, Give you the top percentage of rows with positive values and shows you the rows around that value
 ```bash
