@@ -326,7 +326,7 @@ python merge_tsv_by_keys.py \
   --right rna_single_cell_clusters.tsv \
   --left-keys "Cluster","Tissue","Cell type" \
   --right-keys "Cluster","Tissue","Cell type" \
-  --right-cols "Cell count,Included in aggregation,Annotation reliability" \
+  --right-cols "Cell type class,Cell type detail,Cell count,Annotation reliability" \
   --out  combined_expression_data.tsv
 ```
 This gives you a file that looks like following
@@ -338,6 +338,7 @@ ENSG00000000003 TSPAN6  ovary   c-2     ovarian stromal cells   143     52.3    
 ENSG00000000003 TSPAN6  ovary   c-3     ovarian stromal cells   456     91.4    6032    yes     high
 ENSG00000000003 TSPAN6  ovary   c-4     vascular endothelial cells      164     28.6    5837    yes     high
 ```
+
 # 2) Filtering combined dataset
 
 # 2-I Introduction
