@@ -1706,6 +1706,22 @@ log2_enrichment_penalized_distribution.png
 <img width="1000" height="700" alt="log2_enrichment_penalized_distribution" src="https://github.com/user-attachments/assets/ad770994-6ef6-4b93-a0b4-f0fe4915e96b" />
 
 
+# 5) Add celltype info layers
+
+# 5-I Introduction
+
+My enrichment value table only has cell type information. But it can be useful to have information like cell type group and cell type class. I am adding those layers to the dataset here
+
+HPA has these information on the table here:
+```url
+https://www.proteinatlas.org/download/tsv/rna_single_cell_type_cell_types.tsv.zip
+```
+I can use the same merging script from section 1
+
+# 5-II Run command
+
+I Run it like following
+
 # 5) Rank genes on cell specific expresion
 
 # 5-I Introduction
