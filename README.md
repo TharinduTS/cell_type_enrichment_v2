@@ -1722,6 +1722,16 @@ I can use the same merging script from section 1
 
 I Run it like following
 
+```bash
+python ../1.Merging/1.Raw_data/merge_tsv_by_keys.py \
+  --left enrichment_values_for_filtered_celltypes.tsv \
+  --right rna_single_cell_type_cell_types.tsv \
+  --left-keys "Cell type" \
+  --right-keys "Cell type" \
+  --right-cols "Cell type group,Cell type class" \
+  --out  enrich_values_with_cell_class_data.tsv
+```
+
 # 5) Rank genes on cell specific expresion
 
 # 5-I Introduction
