@@ -946,7 +946,7 @@ examples:
 ```bash
 python filter_integration_long.py \
   --input combined_expression_data.tsv \
-  --output integrated_filtered.tsv \
+  --output combined_expression_data_filtered.tsv \
   --cluster-cols Tissue Cluster \
   --min-cells 30 --min-genes 8000 \
   --drop-mixed --ignore-case \
