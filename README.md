@@ -1696,7 +1696,10 @@ This code plots the distribution, Give you the top percentage of rows with posit
 ```bash
 Percentage of rows with positive log2_enrichment_penalized: 18.17%
 ```
-I am using 20% of the top values for gene ranking in section 5 based on this
+With this data, in the ranking step below (section 5), I am 
+
+1. dropping all the negative values and 0s as they represent cell type*gene combinations with equal or less than expression to the background
+2. Checking the presense of expression of genes in cell types in top x% of the enrichment values FROM THE REMAINING values so I only get gene expression which is significantly higher than background 
 
 log2_enrichment_penalized_distribution.png
 
