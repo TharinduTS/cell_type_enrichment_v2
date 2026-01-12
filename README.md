@@ -1735,137 +1735,205 @@ python ../1.Combining_datasets/1.Raw_data/merge_tsv_by_keys.py \
 # 5) Rank genes on cell specific expresion
 
 # 6-I Introduction
-This step ranks genes globally and estimates cell-type counts based on enrichment scores, with additional options for data cleanup. The script now supports:
+This step ranks genes globally based on their cell-type specificity and enrichment scores. It helps identify marker genes for specific cell types or groups by analyzing how many distinct categories (e.g., cell types, cell type groups, or classes) each gene appears in within the top subset of enriched rows.
+Key features:
 
-Dropping NaN values in ranking columns (--drop-na).
-Excluding negative values in ranking columns (--drop-negatives).
-Ensuring all calculations (top-% subset, per-gene cell-type counts, and ranking) operate on clean, non-negative, non-NaN data.
+Select a top percentage of rows globally based on an enrichment metric.
+Count the number of unique presence groups (e.g., cell types or classes) per gene in that subset.
+Rank genes:
 
-This is useful for ensuring that only meaningful enrichment scores are considered when ranking genes and estimating cell-type specificity.
+Primary: by number of presence groups (ascending → more specific).
+Secondary: by enrichment score (descending).
+
+
+Supports custom grouping column (e.g., Cell type, Cell type group, Cell type class).
+Allows custom output column names for clarity.
+Optional filters for NA and negative values.
 
 # 6-II Rank genes and estimate celltype counts script
 
 rank_genes.py
 ```py
 
-
 #!/usr/bin/env python3
 """
-Rank genes globally and estimate cell-type counts based on enrichment scores.
-
-Features:
-- Build a global top-% subset by --top-col.
-- Count per-gene cell types in that subset.
-- Rank rows: primary by #cell types (ascending), secondary by sorting column (descending).
-- Compute rank-within-cell-type based on overall rank order.
+Rank genes globally and estimate group (cell-type/class/group) counts
+based on enrichment scores.
 
 Enhancements:
-- --drop-na: Remove rows where --top-col or --sorting-col is NaN before any calculations.
-- --drop-negatives: Remove rows where --top-col or --sorting-col is < 0 before any calculations.
+- Presence/grouping column is configurable via --presence-col (alias of --celltype-col).
+- Custom output column names for:
+  * count of groups per gene in the global top subset
+  * list of groups per gene in the global top subset
+  * overall rank
+  * rank within group
+
+Original features retained:
+- Build a global top-% subset by --top-col.
+- Count per-gene groups in that subset (optionally deduplicated).
+- Rank rows: primary by #groups (ascending), secondary by sorting column (descending).
+- Compute rank-within-group based on overall rank order.
+- Options to drop NA/negative values in selection/sorting columns.
 """
 
 import argparse
-import sys
 import pandas as pd
 import numpy as np
 
-def to_numeric_safe(s, convert_inf_to_nan=True):
-    """Coerce to numeric, optionally converting +/-inf to NaN."""
-    s = pd.to_numeric(s, errors="coerce")
-    if convert_inf_to_nan:
-        s = s.replace([np.inf, -np.inf], np.nan)
-    return s
 
-def normalize_headers(df):
-    """Trim and normalize header whitespace."""
-    return df.rename(columns=lambda x: " ".join(str(x).strip().split()))
+def to_numeric_safe(series: pd.Series, convert_inf_to_nan: bool = True) -> pd.Series:
+    """Coerce to numeric; optionally convert +/-inf to NaN."""
+    out = pd.to_numeric(series, errors="coerce")
+    if convert_inf_to_nan:
+        out = out.replace([np.inf, -np.inf], np.nan)
+    return out
+
+
+def normalize_headers(df: pd.DataFrame) -> pd.DataFrame:
+    """Trim & normalize header whitespace (non-destructive to data)."""
+    return df.rename(columns=lambda x: " ".join(str(x).split()).strip())
+
 
 def main():
-    parser = argparse.ArgumentParser(description="Rank genes globally and estimate cell-type counts.")
+    parser = argparse.ArgumentParser(
+        description="Rank genes globally and estimate group (cell-type/class/group) counts."
+    )
+
+    # I/O
     parser.add_argument("--input", required=True, help="Input TSV file from pipeline.")
     parser.add_argument("--output", required=True, help="Output TSV file with ranking.")
-    parser.add_argument("--top-percent", type=float, default=25.0, help="Top percentage for global subset.")
-    parser.add_argument("--min-top-rows", type=int, default=1, help="Minimum rows in global top subset.")
-    parser.add_argument("--top-col", default="log2_enrichment_penalized", help="Column for global subset selection.")
-    parser.add_argument("--sorting-col", default="log2_enrichment_penalized", help="Column for ranking.")
+
+    # Top subset selection
+    parser.add_argument("--top-percent", type=float, default=25.0,
+                        help="Top percentage for global subset.")
+    parser.add_argument("--min-top-rows", type=int, default=1,
+                        help="Minimum rows in global top subset.")
+    parser.add_argument("--top-col", default="log2_enrichment_penalized",
+                        help="Column for global subset selection.")
+    parser.add_argument("--sorting-col", default="log2_enrichment_penalized",
+                        help="Column for ranking (secondary key, descending).")
+
+    # Entity columns
     parser.add_argument("--gene-col", default="Gene", help="Gene ID column.")
-    parser.add_argument("--celltype-col", default="Cell type", help="Cell type column.")
-    parser.add_argument("--unique-celltypes", action="store_true", help="Deduplicate cell types per gene.")
-    parser.add_argument("--drop-zero-only", action="store_true", help="Drop rows with zero cell-type count.")
-    parser.add_argument("--min-celltype-count", type=int, default=0, help="Minimum cell-type count to keep.")
-    parser.add_argument("--drop-na", action="store_true", help="Drop rows with NaN in top/sorting columns.")
-    parser.add_argument("--drop-negatives", action="store_true", help="Drop rows with negative values in top/sorting columns.")
-    parser.add_argument("--include-cols", nargs="+", default=[
-        "Gene","Gene name","Cell type","avg_nCPM","specificity_tau",
-        "Enrichment score (tau penalized)","log2_enrichment_penalized"
-    ], help="Columns to include in output.")
+    parser.add_argument("--celltype-col", default="Cell type",
+                        help="(Deprecated alias) Column for presence/grouping.")
+    parser.add_argument("--presence-col", default=None,
+                        help="Column used to check presence/grouping (e.g., 'Cell type group'). "
+                             "If omitted, falls back to --celltype-col.")
+
+    # Behavior
+    parser.add_argument("--unique-celltypes", action="store_true",
+                        help="Deduplicate groups per gene when counting.")
+    parser.add_argument("--drop-zero-only", action="store_true",
+                        help="Drop rows with zero group count for the gene.")
+    parser.add_argument("--min-celltype-count", type=int, default=0,
+                        help="Minimum group count to keep.")
+
+    parser.add_argument("--drop-na", action="store_true",
+                        help="Drop rows where --top-col or --sorting-col is NaN.")
+    parser.add_argument("--drop-negatives", action="store_true",
+                        help="Drop rows where --top-col or --sorting-col is < 0.")
+
+    # Output controls
+    parser.add_argument("--include-cols", nargs="+",
+                        default=["Gene", "Gene name", "Cell type", "avg_nCPM",
+                                 "specificity_tau", "Enrichment score (tau penalized)",
+                                 "log2_enrichment_penalized"],
+                        help="Columns to include in output.")
+
+    parser.add_argument("--output-count-col", default="top_percent_celltype_count",
+                        help="Name for the per-gene group count column.")
+    parser.add_argument("--output-list-col", default="top_percent_celltypes",
+                        help="Name for the per-gene group list column.")
+    parser.add_argument("--output-overall-rank-col", default="overall_rank",
+                        help="Name for the overall rank column.")
+    parser.add_argument("--output-rank-within-col", default="rank_within_celltype",
+                        help="Name for the rank-within-group column.")
+
     parser.add_argument("--verbose", action="store_true", help="Print summary info.")
+
     args = parser.parse_args()
 
-    # Load and normalize
+    presence_col = args.presence_col if args.presence_col else args.celltype-col
+
+    # Load & normalize
     df = pd.read_csv(args.input, sep="\t")
     df = normalize_headers(df)
 
-    # Validate columns
-    for col in [args.gene_col, args.celltype_col, args.top_col, args.sorting_col]:
+    # Validate required columns
+    required_cols = [args.gene_col, presence_col, args.top_col, args.sorting_col]
+    for col in required_cols:
         if col not in df.columns:
-            sys.exit(f"ERROR: Missing column {col}")
+            raise SystemExit(f"ERROR: Missing column '{col}' in input.")
 
-    # Coerce numeric
+    # Coerce numeric for selection/sorting metrics
     df[args.top_col] = to_numeric_safe(df[args.top_col])
     df[args.sorting_col] = to_numeric_safe(df[args.sorting_col])
 
-    # Drop NA
+    # Drop NA rows if requested
     if args.drop_na:
         before = len(df)
         df = df[df[args.top_col].notna() & df[args.sorting_col].notna()]
-        if args.verbose: print(f"[INFO] Dropped {before - len(df)} rows with NaN.")
+        if args.verbose:
+            print(f"[INFO] Dropped {before - len(df)} rows with NaN.")
 
-    # Drop negatives
+    # Drop negatives if requested
     if args.drop_negatives:
         before = len(df)
         df = df[(df[args.top_col] >= 0) & (df[args.sorting_col] >= 0)]
-        if args.verbose: print(f"[INFO] Dropped {before - len(df)} rows with negatives.")
+        if args.verbose:
+            print(f"[INFO] Dropped {before - len(df)} rows with negatives.")
 
     if df.empty:
-        pd.DataFrame(columns=args.include_cols).to_csv(args.output, sep="\t", index=False)
+        out = df.head(0)
+        out.to_csv(args.output, sep="\t", index=False)
         return
 
-    # Sort and subset
-    df_sorted = df.sort_values(by=args.top_col, ascending=False, na_position="last")
-    top_n = max(int(len(df_sorted) * args.top_percent / 100.0), args.min_top_rows)
-    df_top = df_sorted.head(top_n)
+    # Sort and select top subset
+    df_sorted = df.sort_values(by=args.sorting_col, ascending=False, na_position="last")
+    n_top = max(int(len(df_sorted) * (args.top_percent / 100.0)), args.min_top_rows)
+    df_top = df_sorted.head(n_top).copy()  # ✅ FIX: make a copy to avoid SettingWithCopyWarning
 
-    # Compute per-gene cell types
+    # Compute per-gene group list/count
     if args.unique_celltypes:
-        per_gene_ctypes = df_top.groupby(args.gene_col)[args.celltype_col].apply(lambda s: sorted(set(s)))
+        per_gene_groups = df_top.groupby(args.gene_col)[presence_col].apply(lambda s: sorted(set(s.dropna())))
     else:
-        per_gene_ctypes = df_top.groupby(args.gene_col)[args.celltype_col].apply(list)
-    per_gene_count = per_gene_ctypes.apply(len)
+        per_gene_groups = df_top.groupby(args.gene_col)[presence_col].apply(lambda s: list(s.dropna()))
 
-    # Map back
-    df["top_percent_celltype_count"] = df[args.gene_col].map(per_gene_count).fillna(0).astype("Int64")
-    df["top_percent_celltypes"] = df[args.gene_col].map(per_gene_ctypes).apply(lambda v: ", ".join(v) if isinstance(v, list) else "")
+    per_gene_count = per_gene_groups.apply(len)
 
-    # Filter by cell-type count
+    # Assign new columns safely
+    df_top.loc[:, args.output_count_col] = df_top[args.gene_col].map(per_gene_count).fillna(0).astype("Int64")
+    df_top.loc[:, args.output_list_col] = df_top[args.gene_col].map(
+        per_gene_groups.apply(lambda lst: ", ".join(lst) if isinstance(lst, list) else "")
+    ).fillna("")
+
+    # Filter by count thresholds
     if args.drop_zero_only:
-        df = df[df["top_percent_celltype_count"] != 0]
-    else:
-        df = df[df["top_percent_celltype_count"] > args.min_celltype_count]
+        df_top = df_top[df_top[args.output_count_col] != 0]
+    elif args.min_celltype_count > 0:
+        df_top = df_top[df_top[args.output_count_col] > args.min_celltype_count]
 
-    if df.empty:
-        pd.DataFrame(columns=args.include_cols).to_csv(args.output, sep="\t", index=False)
+    if df_top.empty:
+        out = df_top.head(0)
+        out.to_csv(args.output, sep="\t", index=False)
         return
 
     # Rank
-    df = df.sort_values(by=["top_percent_celltype_count", args.sorting_col], ascending=[True, False], na_position="last").reset_index(drop=True)
-    df["overall_rank"] = range(1, len(df) + 1)
-    df["rank_within_celltype"] = df.groupby(args.celltype_col).cumcount() + 1
+    df_ranked = df_top.sort_values(by=[args.output_count_col, args.sorting_col],
+                                   ascending=[True, False]).reset_index(drop=True)
+    df_ranked.loc[:, args.output_overall_rank_col] = np.arange(1, len(df_ranked) + 1)
+    df_ranked.loc[:, args.output_rank_within_col] = df_ranked.groupby(presence_col).cumcount() + 1
 
-    # Output
-    output_cols = args.include_cols + ["top_percent_celltype_count","top_percent_celltypes","rank_within_celltype","overall_rank"]
-    df[output_cols].to_csv(args.output, sep="\t", index=False)
-    if args.verbose: print(f"[INFO] Wrote {len(df)} rows to {args.output}")
+    # Prepare output
+    out_cols = args.include_cols + [args.output_count_col, args.output_list_col,
+                                    args.output_rank_within_col, args.output_overall_rank_col]
+    out_cols = [c for c in out_cols if c in df_ranked.columns]
+
+    df_ranked.to_csv(args.output, sep="\t", index=False)
+    if args.verbose:
+        print(f"[INFO] Wrote {len(df_ranked)} rows to {args.output}")
+
 
 if __name__ == "__main__":
     main()
@@ -1873,37 +1941,92 @@ if __name__ == "__main__":
 ```
 # 6-III CLI help
 ```txt
-usage: rank_genes.py --input FILE --output FILE [options]
 
-Options:
-  --top-percent FLOAT       Top percentage for global subset (default: 25)
-  --min-top-rows INT        Minimum rows in global top subset (default: 1)
-  --top-col STR             Column for global subset selection (default: log2_enrichment_penalized)
-  --sorting-col STR         Column for ranking (default: log2_enrichment_penalized)
-  --unique-celltypes        Deduplicate cell types per gene
-  --drop-zero-only          Drop rows with zero cell-type count
-  --min-celltype-count INT  Minimum cell-type count to keep (default: 0)
-  --drop-na                 Drop rows with NaN in top/sorting columns
-  --drop-negatives          Drop rows with negative values in top/sorting columns
-  --include-cols LIST       Columns to include in output
-  --verbose                 Print summary info
+usage: rank_genes.py --input INPUT --output OUTPUT
+                     [--top-percent TOP_PERCENT]
+                     [--min-top-rows MIN_TOP_ROWS]
+                     [--top-col TOP_COL]
+                     [--sorting-col SORTING_COL]
+                     [--gene-col GENE_COL]
+                     [--celltype-col CELLTYPE_COL]
+                     [--presence-col PRESENCE_COL]
+                     [--unique-celltypes]
+                     [--drop-zero-only]
+                     [--min-celltype-count MIN_COUNT]
+                     [--drop-na]
+                     [--drop-negatives]
+                     [--include-cols INCLUDE_COLS [INCLUDE_COLS ...]]
+                     [--output-count-col OUTPUT_COUNT_COL]
+                     [--output-list-col OUTPUT_LIST_COL]
+                     [--output-overall-rank-col OUTPUT_OVERALL_RANK_COL]
+                     [--output-rank-within-col OUTPUT_RANK_WITHIN_COL]
+                     [--verbose]
+
+Rank genes globally and estimate group (cell-type/class/group) counts based on enrichment scores.
+
+Required arguments:
+  --input INPUT                Path to input TSV file (enrichment results).
+  --output OUTPUT              Path to output TSV file with ranking.
+
+Optional arguments:
+  --top-percent TOP_PERCENT    Top percentage of rows to consider globally (default: 25).
+  --min-top-rows MIN_TOP_ROWS  Minimum rows in global top subset (default: 1).
+  --top-col TOP_COL            Column for global subset selection (default: log2_enrichment_penalized).
+  --sorting-col SORTING_COL    Column for ranking (secondary key, descending).
+  --gene-col GENE_COL          Gene ID column (default: Gene).
+  --celltype-col CELLTYPE_COL  Deprecated alias for presence column (default: Cell type).
+  --presence-col PRESENCE_COL  Column used for presence/grouping (e.g., Cell type group).
+  --unique-celltypes           Deduplicate presence groups per gene when counting.
+  --drop-zero-only             Drop rows with zero group count.
+  --min-celltype-count MIN     Minimum group count to keep (default: 0).
+  --drop-na                    Drop rows with NaN in top/sorting columns.
+  --drop-negatives             Drop rows with negative values in top/sorting columns.
+  --include-cols COLS [...]    Columns to include in output (default: Gene, Gene name, Cell type, avg_nCPM, specificity_tau, Enrichment score (tau penalized), log2_enrichment_penalized).
+  --output-count-col NAME      Name for per-gene group count column (default: top_percent_celltype_count).
+  --output-list-col NAME       Name for per-gene group list column (default: top_percent_celltypes).
+  --output-overall-rank-col NAME Name for overall rank column (default: overall_rank).
+  --output-rank-within-col NAME Name for rank-within-group column (default: rank_within_celltype).
+  --verbose                    Print summary info.
+
+Example:
+  python rank_genes.py \
+    --input enrich_values_with_cell_class_data.tsv \
+    --output ranked_genes_by_cell_type.tsv \
+    --top-percent 100 \
+    --top-col log2_enrichment_penalized \
+    --sorting-col log2_enrichment_penalized \
+    --gene-col Gene \
+    --presence-col "Cell type" \
+    --unique-celltypes \
+    --drop-na \
+    --drop-negatives \
+    --output-count-col top_percent_Cell_Type_count \
+    --output-list-col top_percent_Cell_Types \
+    --output-rank-within-col rank_within_Cell_Type \
+    --output-overall-rank-col overall_rank_by_Cell_Type \
+    --verbose
+
 ```
 # 6-IV Run command
 #*I ran it like following*
 ```
+
 python rank_genes.py \
-  --input enrichV1_4_1clusters.tsv \
-  --output ranked_genes.tsv \
+  --input enrich_values_with_cell_class_data.tsv \
+  --output ranked_genes_by_cell_type.tsv \
   --top-percent 100 \
-  --min-top-rows 50000 \
-  --top-col "log2_enrichment_penalized" \
-  --sorting-col "log2_enrichment_penalized" \
+  --top-col log2_enrichment_penalized \
+  --sorting-col log2_enrichment_penalized \
+  --gene-col Gene \
+  --presence-col "Cell type" \
   --unique-celltypes \
   --drop-na \
   --drop-negatives \
-  --verbose \
-  --include-cols Gene "Gene name" "Cell type" avg_nCPM specificity_tau \
-                "Enrichment score (tau penalized)" "log2_enrichment_penalized"
+  --output-count-col top_percent_Cell_Type_count \
+  --output-list-col top_percent_Cell_Types \
+  --output-rank-within-col rank_within_Cell_Type \
+  --output-overall-rank-col overall_rank_by_Cell_Type \
+  --verbose
 
 ```
 
