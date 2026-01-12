@@ -2103,7 +2103,22 @@ python rank_genes.py \
   --output-overall-rank-col overall_rank_by_Cell_group \
   --verbose
 ```
-
+#*Then I rankd them again by the PRESCENCE IN 'Cell type class'*
+```
+python rank_genes.py \
+  --input ranked_genes_by_cell_type_and_group.tsv \
+  --output ranked_genes_by_cell_type_and_group_and_class.tsv \
+  --top-percent 100 \
+  --top-col log2_enrichment_penalized \
+  --sorting-col log2_enrichment_penalized \
+  --gene-col Gene \
+  --presence-col "Cell type class" \
+  --output-count-col top_percent_Cell_class_count \
+  --output-list-col top_percent_Cell_classes \
+  --output-rank-within-col rank_within_Cell_class \
+  --output-overall-rank-col overall_rank_by_Cell_class \
+  --verbose
+```
 
 
 # 8) Making interactive plots
