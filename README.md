@@ -246,6 +246,16 @@ if __name__ == "__main__":
 ```
 # 1-III CLI help
 CLI help
+
+#**************	NOTE ************************************
+
+This script can leave rows without matching keys on right table column value empty. Therefore you should use a command like following to find the rows with unassigned values to avoid errors down the pipeline (I have dealt with this issue in chapter 5)
+see the example below from section 5
+
+```bash
+awk -F'\t' 'NR==1 {for(i=1;i<=NF;i++) if($i=="Cell type group") col=i; next} $col=="" {print}' enrich_values_with_cell_class_data.tsv | cut -f 3 | sort -u
+```
+#********************************************************
 ```txt
 --left <filename>
 Left/base TSV (the file to be enriched).
@@ -337,13 +347,6 @@ ENSG00000000003 TSPAN6  ovary   c-1     ovarian stromal cells   529     80.5    
 ENSG00000000003 TSPAN6  ovary   c-2     ovarian stromal cells   143     52.3    6993    yes     high
 ENSG00000000003 TSPAN6  ovary   c-3     ovarian stromal cells   456     91.4    6032    yes     high
 ENSG00000000003 TSPAN6  ovary   c-4     vascular endothelial cells      164     28.6    5837    yes     high
-```
-
-*****	NOTE ********
-This script can leave rows without matching keys on right table column value empty. Therefore you should use a command like following to find the rows with unassigned values to avoid errors down the pipeline (I have dealt with this issue in chapter 5)
-see the example below from section 5
-```bash
-awk -F'\t' 'NR==1 {for(i=1;i<=NF;i++) if($i=="Cell type group") col=i; next} $col=="" {print}' enrich_values_with_cell_class_data.tsv | cut -f 3 | sort -u
 ```
 
 # 2) Filtering combined dataset
