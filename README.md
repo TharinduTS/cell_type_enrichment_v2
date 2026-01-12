@@ -1747,7 +1747,7 @@ As I am changing filtering values as needed, sometimes 'rna_single_cell_type_cel
 ```bash
 awk -F'\t' 'NR==1 {for(i=1;i<=NF;i++) if($i=="Cell type group") col=i; next} $col=="" {print}' enrich_values_with_cell_class_data.tsv | cut -f 3 | sort -u
 ```
-Then I added information of missing groups and classes to a new file named 'rna_single_cell_type_cell_types_with_added_groups.tsv' and re mapped cell type groups and classses to rna_single_cell_type_cell_types_with_added_groups.txt to get a complete set.
+Then I added information of missing groups and classes to a new file named 'rna_single_cell_type_cell_types_with_added_groups.txt' and re mapped cell type groups and classses to rna_single_cell_type_cell_types_with_added_groups.txt to get a complete set.
 
 Following are the rows I added
 ```tsv
@@ -1767,7 +1767,7 @@ stromal cells	stromal cells	mesenchymal cells
 
 Then ran it again with the updtaed file
 
-AFTER RENAMING TXT TO TSV
+
 ```
 python ../1.Combining_datasets/1.Raw_data/merge_tsv_by_keys.py \
   --left rna_single_cell_type_cell_types_with_added_groups.txt \
