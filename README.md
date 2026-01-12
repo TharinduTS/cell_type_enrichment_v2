@@ -1766,6 +1766,8 @@ stromal cells	stromal cells	mesenchymal cells
 ```
 
 Then ran it again with the updtaed file
+
+AFTER RENAMING TXT TO TSV
 ```
 python ../1.Combining_datasets/1.Raw_data/merge_tsv_by_keys.py \
   --left rna_single_cell_type_cell_types_with_added_groups.txt \
