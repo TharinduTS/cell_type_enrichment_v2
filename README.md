@@ -1734,15 +1734,49 @@ I Run it like following
 
 ```bash
 python ../1.Combining_datasets/1.Raw_data/merge_tsv_by_keys.py \
-  --left enrichment_values_for_filtered_celltypes.tsv \
+  --left rna_single_cell_type_cell_types_with_added_groups.txt \
   --right rna_single_cell_type_cell_types.tsv \
   --left-keys "Cell type" \
   --right-keys "Cell type" \
   --right-cols "Cell type group,Cell type class" \
   --out  enrich_values_with_cell_class_data.tsv
 ```
+# 5-III Fixing celltypes with missing groups
 
-# 5) Rank genes on cell specific expresion
+As I am changing filtering values as needed, sometimes 'rna_single_cell_type_cell_types.tsv' does not have all the 'cell type groups' and 'cell type classes' for all the cell types in enrichment table. Therefore I have to look for rows with missing values for 'Cell type group' and ' Cell type class' with following command
+```bash
+awk -F'\t' 'NR==1 {for(i=1;i<=NF;i++) if($i=="Cell type group") col=i; next} $col=="" {print}' enrich_values_with_cell_class_data.tsv | cut -f 3 | sort -u
+```
+Then I added information of missing groups and classes to a new file named 'rna_single_cell_type_cell_types_with_added_groups.tsv' and re mapped cell type groups and classses to rna_single_cell_type_cell_types_with_added_groups.txt to get a complete set.
+
+Following are the rows I added
+```tsv
+cycling epithelial cells	proliferating cells	stem and proliferating cells
+cycling immune cells	proliferating cells	blood and immune cells
+cycling salivary epithelial cells	proliferating cells	specialized epithelial cells
+fallopian basal stem cells	stem cells	stem and proliferating cells
+fetal immune cells	other immune cells	blood and immune cells
+glandular and luminal cells	glandular and luminal cells	glandular epithelial cells
+intestinal stem cells	stem cells	stem and proliferating cells
+mesangial cells	mural cells	endothelial and mural cells
+multipotent progenitors	stem cells	stem and proliferating cells
+mural & epithelial cells	mural cells	endothelial and mural cells
+mural cells	mural cells	endothelial and mural cells
+stromal cells	stromal cells	mesenchymal cells
+```
+
+Then ran it again with the updtaed file
+```
+python ../1.Combining_datasets/1.Raw_data/merge_tsv_by_keys.py \
+  --left rna_single_cell_type_cell_types_with_added_groups.txt \
+  --right rna_single_cell_type_cell_types_with_added_groups.tsv \
+  --left-keys "Cell type" \
+  --right-keys "Cell type" \
+  --right-cols "Cell type group,Cell type class" \
+  --out  enrich_values_with_cell_class_data.tsv
+```
+
+# 6) Rank genes on cell specific expresion
 
 # 6-I Introduction
 This step ranks genes globally based on their cell-type specificity and enrichment scores. It helps identify marker genes for specific cell types or groups by analyzing how many distinct categories (e.g., cell types, cell type groups, or classes) each gene appears in within the top subset of enriched rows.
