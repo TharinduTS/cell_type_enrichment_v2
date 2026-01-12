@@ -1771,7 +1771,7 @@ Then ran it again with the updtaed file
 ```
 python ../1.Combining_datasets/1.Raw_data/merge_tsv_by_keys.py \
   --left rna_single_cell_type_cell_types_with_added_groups.txt \
-  --right rna_single_cell_type_cell_types_with_added_groups.tsv \
+  --right rna_single_cell_type_cell_types_with_added_groups.txt \
   --left-keys "Cell type" \
   --right-keys "Cell type" \
   --right-cols "Cell type group,Cell type class" \
