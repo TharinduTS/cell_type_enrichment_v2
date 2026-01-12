@@ -1734,7 +1734,7 @@ python ../1.Combining_datasets/1.Raw_data/merge_tsv_by_keys.py \
 
 # 5) Rank genes on cell specific expresion
 
-# 5-I Introduction
+# 6-I Introduction
 This step ranks genes globally and estimates cell-type counts based on enrichment scores, with additional options for data cleanup. The script now supports:
 
 Dropping NaN values in ranking columns (--drop-na).
@@ -1743,7 +1743,7 @@ Ensuring all calculations (top-% subset, per-gene cell-type counts, and ranking)
 
 This is useful for ensuring that only meaningful enrichment scores are considered when ranking genes and estimating cell-type specificity.
 
-# 5-II Rank genes and estimate celltype counts script
+# 6-II Rank genes and estimate celltype counts script
 
 rank_genes.py
 ```py
@@ -1871,7 +1871,7 @@ if __name__ == "__main__":
     main()
 
 ```
-# 5-III CLI help
+# 6-III CLI help
 ```txt
 usage: rank_genes.py --input FILE --output FILE [options]
 
@@ -1888,7 +1888,7 @@ Options:
   --include-cols LIST       Columns to include in output
   --verbose                 Print summary info
 ```
-# 5-IV Run command
+# 6-IV Run command
 #*I ran it like following*
 ```
 python rank_genes.py \
