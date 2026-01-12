@@ -1723,7 +1723,7 @@ I can use the same merging script from section 1
 I Run it like following
 
 ```bash
-python ../1.Merging/1.Raw_data/merge_tsv_by_keys.py \
+python ../1.Combining_datasets/1.Raw_data/merge_tsv_by_keys.py \
   --left enrichment_values_for_filtered_celltypes.tsv \
   --right rna_single_cell_type_cell_types.tsv \
   --left-keys "Cell type" \
