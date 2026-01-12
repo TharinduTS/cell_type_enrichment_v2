@@ -1551,7 +1551,7 @@ python3 "${script_dir}/celltype_enrichment_v1_4.py" "${args[@]}"
 # 3-IV Run command
 Then I ran it like
 ```
-./run_celltype_enrichment_v1_4.sh --input-file integrated_filtered.tsv --output-file enrichV1_4_1clusters.tsv --min-clusters 1 --min-count 50 --specificity-mode penalize --min-specificity 1
+./run_celltype_enrichment_v1_4.sh --input-file combined_expression_data_filtered.tsv --output-file enrichment_values_for_filtered_celltypes.tsv --min-clusters 1 --min-count 50 --specificity-mode penalize --min-specificity 1
 ```
 # 4) Visualizing Enrichment Distributions
 
