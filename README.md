@@ -2009,12 +2009,16 @@ Example:
 ```
 # 6-IV Run command
 #*I ran it like following*
-```
 
+#*I Ranked these first by 'Cell type'*
+
+#*And only checked the prescense in top 95% of the enrichment values as lowest 5% could be close to background noise*
+
+```
 python rank_genes.py \
   --input enrich_values_with_cell_class_data.tsv \
   --output ranked_genes_by_cell_type.tsv \
-  --top-percent 100 \
+  --top-percent 95 \
   --top-col log2_enrichment_penalized \
   --sorting-col log2_enrichment_penalized \
   --gene-col Gene \
@@ -2030,8 +2034,29 @@ python rank_genes.py \
 
 ```
 
+#*Then I rankd them again by the PRESCENCE IN 'Cell type group'*
 
+This does no change the previous ranking. This just adds another column to it with ranks based on cell group instead cell type
 
+STILL I DID NOT CALCULATE ENRICHMENT VALUES SEPERATELY FOR 'Cell type group'. ENRICHMENT IS STILL BASED ON ALL THE 'Cell Type' values
+
+AND I AM SETTING --top-percent TO 100% HERE AS IT WAS ALREADY FILTERED IN THE INPUT FILE USED HERE. Same with --drop-na and negatives etc
+
+```
+python rank_genes.py \
+  --input ranked_genes_by_cell_type.tsv \
+  --output ranked_genes_by_cell_type_and_group.tsv \
+  --top-percent 100 \
+  --top-col log2_enrichment_penalized \
+  --sorting-col log2_enrichment_penalized \
+  --gene-col Gene \
+  --presence-col "Cell type group" \
+  --output-count-col top_percent_Cell_group_count \
+  --output-list-col top_percent_Cell_groups \
+  --output-rank-within-col rank_within_Cell_group \
+  --output-overall-rank-col overall_rank_by_Cell_group \
+  --verbose
+```
 
 
 
