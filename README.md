@@ -2119,17 +2119,22 @@ python rank_genes.py \
   --output-overall-rank-col overall_rank_by_Cell_class \
   --verbose
 ```
+# 7) Final tweaks before plotting
 
+I am leaving this section for any last changes like column names changes , selecting data etc
+
+# 7-I
+#* First I select the number of rows I need in the plot like this
+```bash
+head -n 35000 ranked_genes.tsv > selected_ranked_genes.tsv
+```
 
 # 8) Making interactive plots
 
 # 8-I Introduction
  
 
-#* First I select the number of rows I need in the plot like this
-```bash
-head -n 35000 ranked_genes.tsv > selected_ranked_genes.tsv
-```
+
 and Finally I plotted it with universal plot maker
 
 # 8-II universal plot maker script
