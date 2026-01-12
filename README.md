@@ -1912,9 +1912,9 @@ python rank_genes.py \
 
 
 
-# 6) Making interactive plots
+# 8) Making interactive plots
 
-# 6-I Introduction
+# 8-I Introduction
  
 
 #* First I select the number of rows I need in the plot like this
@@ -1923,11 +1923,11 @@ head -n 35000 ranked_genes.tsv > selected_ranked_genes.tsv
 ```
 and Finally I plotted it with universal plot maker
 
-# 6-II universal plot maker script
+# 8-II universal plot maker script
 ```url
 https://github.com/TharinduTS/Different_ways_to_measure_cell_specific_expression/blob/main/README.md#universal-interactive-plot-maker
 ```
-# 6-III universal plot maker Runner
+# 8-III universal plot maker Runner
 With following runner
 
 run_universal_plot_maker_with_options.sh
