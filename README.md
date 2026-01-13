@@ -2861,11 +2861,8 @@ python flex_plot_maker.py \
   --color-col "Cell type" \
   --dropdown-cols "Cell type class" "Cell type group" "Cell type" \
   --search-cols "Gene" "Gene name" \
-  --detail-cols "Gene" "Gene name" "Cell type" "Cell type group" "Cell type class" "Enrichment score" "log2_enrichment" "log2_enrichment_penalized" "top_percent_C
-ell_Type_count" "top_percent_Cell_group_count" "top_percent_Cell_class_count" "overall_rank_by_Cell_Type" "overall_rank_by_Cell_group" "overall_rank_by_Cell_class
-" "rank_within_Cell_Type" "rank_within_Cell_group" "rank_within_Cell_class" "top_percent_Cell_Types" "top_percent_Cell_groups" "top_percent_Cell_classes" \
-  --sort-cols  "Enrichment score" "log2_enrichment" "Enrichment score (tau penalized)" "log2_enrichment_penalized" "overall_rank_by_Cell_Type" "overall_rank_by_Ce
-ll_group" "overall_rank_by_Cell_class" \
+  --detail-cols "Gene" "Gene name" "Cell type" "Cell type group" "Cell type class" "Enrichment score" "log2_enrichment" "log2_enrichment_penalized" "top_percent_Cell_Type_count" "top_percent_Cell_group_count" "top_percent_Cell_class_count" "overall_rank_by_Cell_Type" "overall_rank_by_Cell_group" "overall_rank_by_Cell_class" "rank_within_Cell_Type" "rank_within_Cell_group" "rank_within_Cell_class" "top_percent_Cell_Types" "top_percent_Cell_groups" "top_percent_Cell_classes" \
+  --sort-cols  "Enrichment score" "log2_enrichment" "Enrichment score (tau penalized)" "log2_enrichment_penalized" "overall_rank_by_Cell_Type" "overall_rank_by_Cell_group" "overall_rank_by_Cell_class" \
   --title "Celltype Enrichmnt" \
   --dedupe-policy mean \
   --self-contained --plotly-file plotly-2.30.0.min.js \
