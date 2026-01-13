@@ -2854,7 +2854,7 @@ if __name__ == '__main__':
 ```
 python flex_plot_maker.py \
   --file top_10k.tsv \
-  --out defaults_demo.html \
+  --out top_10k.html \
   --plot-type bar \
   --x-cols "Gene name" \
   --y-cols "Enrichment score" "log2_enrichment" "Enrichment score (tau penalized)" "log2_enrichment_penalized" \
