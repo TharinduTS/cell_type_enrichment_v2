@@ -2131,6 +2131,773 @@ head -n 35000 ranked_genes.tsv > selected_ranked_genes.tsv
 
 # 8) Making interactive plots
 
+I make plots with 
+
+flex_plot_maker_final.py
+```
+
+#!/usr/bin/env python3
+"""
+flex_plot_maker_final.py (grouped-color bars + robust TSV export + CLI defaults + a11y)
+
+Generate a standalone interactive HTML from a CSV/TSV using Plotly.js.
+- Dynamic axis selection (X/Y), plot type (bar/scatter), color by a column
+- Dropdown filters, search boxes, primary/secondary sorting (bar)
+- Dedupe policy (none/first/max/mean) per (X, Color)
+- Details-on-click table + TSV export
+- --top for server-side truncation
+- --self-contained with optional --plotly-file to embed Plotly offline
+- Accessibility-friendly HTML: <html lang>, <meta viewport>, <title>, labeled selects
+- CLI defaults (--default-*) and JSON defaults via --defaults-file
+"""
+
+import json
+import os
+import sys
+import argparse
+import re
+import pandas as pd
+from typing import List, Optional
+
+PLOTLY_JS_CDN = "https://cdn.plot.ly/plotly-2.30.0.min.js"
+PLOTLY_JS_INLINE_PLACEHOLDER = "/* Insert the contents of plotly-2.30.0.min.js here for offline use */"
+
+# ---------------------
+# Helpers
+# ---------------------
+
+def infer_sep(path: str) -> Optional[str]:
+    low = path.lower()
+    if low.endswith('.tsv') or low.endswith('.tab'):
+        return '\t'
+    if low.endswith('.csv'):
+        return ','
+    return None
+
+def read_table(path: str, sep: Optional[str] = None, encoding: str = 'utf-8') -> pd.DataFrame:
+    if sep is None:
+        sep = infer_sep(path)
+    if sep is None:
+        try:
+            return pd.read_csv(path, sep='\t', encoding=encoding)
+        except Exception:
+            return pd.read_csv(path, sep=',', encoding=encoding)
+    return pd.read_csv(path, sep=sep, encoding=encoding)
+
+def parse_range(s: Optional[str]) -> Optional[List[float]]:
+    if not s:
+        return None
+    s = s.strip()
+    s = re.sub(r'[\[\]\s]', '', s)
+    parts = s.split(',')
+    if len(parts) != 2:
+        return None
+    try:
+        return [float(parts[0]), float(parts[1])]
+    except Exception:
+        return None
+
+def auto_columns(df: pd.DataFrame) -> dict:
+    """Auto-suggest x/y/dropdown columns if user omits CLI lists."""
+    numeric_cols = [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]
+    non_numeric_cols = [c for c in df.columns if c not in numeric_cols]
+    dropdowns = []
+    for c in non_numeric_cols:
+        nunq = df[c].nunique(dropna=True)
+        if 1 < nunq <= 50:
+            dropdowns.append(c)
+    return {'x': non_numeric_cols, 'y': numeric_cols, 'dropdowns': dropdowns}
+
+def build_payload(df: pd.DataFrame,
+                  plot_type: str,
+                  x_cols: List[str],
+                  y_cols: List[str],
+                  color_col: Optional[str],
+                  dropdown_cols: List[str],
+                  search_cols: List[str],
+                  detail_cols: List[str],
+                  sort_cols: List[str],
+                  initial_zoom: Optional[int],
+                  initial_x_range: Optional[List[float]],
+                  initial_y_range: Optional[List[float]],
+                  title: Optional[str],
+                  dedupe_policy: Optional[str]) -> dict:
+    return {
+        'rows': df.to_dict(orient='records'),
+        'columns': list(df.columns),
+        'plotType': plot_type,
+        'xOptions': x_cols or [],
+        'yOptions': y_cols or [],
+        'colorCol': color_col,
+        'dropdownCols': dropdown_cols or [],
+        'searchCols': search_cols or [],
+        'detailCols': detail_cols or [],
+        'sortCols': sort_cols or [],
+        'initialZoom': int(initial_zoom) if initial_zoom else None,
+        'initialXRange': initial_x_range,
+        'initialYRange': initial_y_range,
+        'title': title or '',
+        'dedupePolicy': dedupe_policy or 'none',
+    }
+
+# ---------------------
+# HTML template (token replacement)
+# ---------------------
+HTML_TEMPLATE = r"""
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>__TITLE__</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; margin: 12px; }
+    #controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 8px; align-items: end; }
+    .ctrl { display: flex; flex-direction: column; }
+    .ctrl label { font-weight: 600; margin-bottom: 4px; }
+    .row { margin-top: 12px; }
+    #plot { width: 100%; height: 720px; }
+    #details { font-size: 13px; color: #333; margin-top: 10px; }
+    table.details-table th { text-align: left; padding: 4px 8px; background: #f7f7f7; }
+    table.details-table td { padding: 4px 8px; }
+  </style>
+  __PLOTLY_SCRIPT__
+</head>
+<body>
+  <h2 id="pageTitle"></h2>
+
+  <div id="controls" aria-label="Plot controls">
+    <div class="ctrl">
+      <label for="plotType">Plot type</label>
+      <select id="plotType" aria-label="Plot type">
+        <option value="bar">Bar</option>
+        <option value="scatter">Scatter</option>
+      </select>
+    </div>
+    <div class="ctrl">
+      <label for="xCol">X axis</label>
+      <select id="xCol" aria-label="X axis"></select>
+    </div>
+    <div class="ctrl">
+      <label for="yCol">Y axis</label>
+      <select id="yCol" aria-label="Y axis"></select>
+    </div>
+    <div class="ctrl">
+      <label for="colorCol">Color by</label>
+      <select id="colorCol" aria-label="Color by"></select>
+    </div>
+
+    <!-- Accessible Sort 1 (field + direction) -->
+    <div class="ctrl">
+      <label for="sort1">Sort 1 (X categories)</label>
+      <div style="display:flex; gap:6px; align-items:end;">
+        <div class="ctrl" style="min-width:0;">
+          <label for="sort1">Field</label>
+          <select id="sort1" aria-label="Sort 1 field"></select>
+        </div>
+        <div class="ctrl" style="min-width:0;">
+          <label for="sort1Dir">Direction</label>
+          <select id="sort1Dir" aria-label="Sort 1 direction">
+            <option value="asc">Asc</option>
+            <option value="desc">Desc</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- Accessible Sort 2 (field + direction) -->
+    <div class="ctrl">
+      <label for="sort2">Sort 2 (tie-break)</label>
+      <div style="display:flex; gap:6px; align-items:end;">
+        <div class="ctrl" style="min-width:0;">
+          <label for="sort2">Field</label>
+          <select id="sort2" aria-label="Sort 2 field"></select>
+        </div>
+        <div class="ctrl" style="min-width:0;">
+          <label for="sort2Dir">Direction</label>
+          <select id="sort2Dir" aria-label="Sort 2 direction">
+            <option value="asc">Asc</option>
+            <option value="desc">Desc</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="ctrl">
+      <label>&nbsp;</label>
+      <div style="display:flex; gap:8px;">
+        <button id="resetBtn" type="button">Reset filters</button>
+        <button id="exportBtn" type="button">Export TSV</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="filterRows" class="row"></div>
+
+  <div id="plot"></div>
+  <div id="details">Click a point/bar to see details here.</div>
+
+  <script type="application/json" id="__payload__">__PAYLOAD_JSON__</script>
+  <script>
+  (function(){
+    function isNumeric(x){ return typeof x === 'number' && Number.isFinite(x); }
+    function toNum(v){ if (typeof v === 'number') return v; if (v == null) return NaN; var s = String(v).replace(',', '.').trim(); var n = parseFloat(s); return Number.isNaN(n) ? NaN : n; }
+    function uniq(arr){ return Array.from(new Set(arr.map(v => String(v)))); }
+    function cmpAsc(a,b){ if (a==null && b==null) return 0; if (a==null) return 1; if (b==null) return -1; if (typeof a === 'number' && typeof b === 'number') return a-b; return String(a).localeCompare(String(b)); }
+    function cmpDesc(a,b){ return -cmpAsc(a,b); }
+
+    var P = JSON.parse(document.getElementById('__payload__').textContent || '{}');
+    var D = P.defaults || {};
+
+    var plotEl = document.getElementById('plot');
+    var titleEl = document.getElementById('pageTitle');
+    titleEl.textContent = P.title || 'Interactive Plot';
+
+    // Controls
+    var selPlotType = document.getElementById('plotType');
+    var selX = document.getElementById('xCol');
+    var selY = document.getElementById('yCol');
+    var selColor = document.getElementById('colorCol');
+    var selSort1 = document.getElementById('sort1');
+    var selSort2 = document.getElementById('sort2');
+    var selSort1Dir = document.getElementById('sort1Dir');
+    var selSort2Dir = document.getElementById('sort2Dir');
+    var resetBtn = document.getElementById('resetBtn');
+    var exportBtn = document.getElementById('exportBtn');
+    var filterRowsEl = document.getElementById('filterRows');
+    var detailsEl = document.getElementById('details');
+
+    function setOptions(selectEl, options, selected){
+      selectEl.innerHTML = '';
+      options.forEach(function(opt){
+        var o = document.createElement('option');
+        o.value = opt; o.textContent = opt; selectEl.appendChild(o);
+      });
+      if (selected && options.includes(selected)) selectEl.value = selected; else if (options.length>0) selectEl.value = options[0];
+    }
+
+    // Apply defaults (D.*) with fallback to payload
+    setOptions(selPlotType, ['bar','scatter'], D.plotType || (P.plotType || 'bar'));
+    setOptions(selX, P.xOptions || [], D.xCol || (P.xOptions||[])[0]);
+    setOptions(selY, P.yOptions || [], D.yCol || (P.yOptions||[])[0]);
+    setOptions(selColor, P.colorCol ? [P.colorCol] : [''], D.colorCol || (P.colorCol || ''));
+    setOptions(selSort1, P.sortCols || [], D.sort1 || (P.sortCols||[])[0]);
+    setOptions(selSort2, P.sortCols || [], D.sort2 || (P.sortCols||[])[1] || '');
+    selSort1Dir.value = D.sort1Dir || 'asc';
+    selSort2Dir.value = D.sort2Dir || 'asc';
+
+    // Build dropdown filters & search inputs
+    filterRowsEl.innerHTML = '';
+    var dropdownSelectors = {};
+    var searchInputs = {};
+
+    (P.dropdownCols || []).forEach(function(col){
+      var values = uniq((P.rows||[]).map(r => r[col]).filter(v => v != null));
+      values.sort((a,b)=>String(a).localeCompare(String(b)));
+      var div = document.createElement('div'); div.className = 'ctrl';
+      var label = document.createElement('label'); label.textContent = col + ' (filter)';
+      var select = document.createElement('select'); select.id = 'dd_'+col; select.setAttribute('aria-label', col + ' filter');
+      var allOpt = document.createElement('option'); allOpt.value='__ALL__'; allOpt.textContent='All'; select.appendChild(allOpt);
+      values.forEach(function(v){ var o = document.createElement('option'); o.value = String(v); o.textContent = String(v); select.appendChild(o); });
+      div.appendChild(label); div.appendChild(select);
+      filterRowsEl.appendChild(div);
+      dropdownSelectors[col] = select;
+    });
+
+    (P.searchCols || []).forEach(function(col){
+      var div = document.createElement('div'); div.className = 'ctrl';
+      var label = document.createElement('label'); label.textContent = col + ' (search)';
+      var input = document.createElement('input'); input.type='text'; input.placeholder = 'Type to filter '+col+'...'; input.id = 'q_'+col; input.setAttribute('aria-label', col + ' search');
+      div.appendChild(label); div.appendChild(input);
+      filterRowsEl.appendChild(div);
+      searchInputs[col] = input;
+    });
+
+    // Apply default dropdown selections
+    if (D.filters && typeof D.filters === 'object'){
+      Object.keys(D.filters).forEach(function(col){
+        var sel = document.getElementById('dd_'+col);
+        if (sel){
+          var target = String(D.filters[col]);
+          var found = false;
+          Array.from(sel.options).forEach(function(opt){ if (String(opt.value) === target) found = true; });
+          if (found) sel.value = target; // else keep All
+        }
+      });
+    }
+
+    // Apply default search terms
+    if (D.search && typeof D.search === 'object'){
+      Object.keys(D.search).forEach(function(col){
+        var inp = document.getElementById('q_'+col);
+        if (inp) inp.value = String(D.search[col] || '');
+      });
+    }
+
+    var SAFE = ['#636EFA','#EF553B','#00CC96','#AB63FA','#FFA15A','#19D3F3','#FF6692','#B6E880','#FF97FF','#FECB52'];
+    function colorMapFor(column, rows){
+      if (!column) return {};
+      var keys = uniq(rows.map(r => r[column]).filter(v => v != null));
+      var cmap = {}; keys.forEach(function(k, i){ cmap[String(k)] = SAFE[i % SAFE.length]; });
+      return cmap;
+    }
+
+    function filterRows(){
+      var rows = (P.rows || []).slice();
+      // Dropdown filters
+      Object.keys(dropdownSelectors).forEach(function(col){
+        var sel = dropdownSelectors[col]; var val = sel.value;
+        if (val && val !== '__ALL__'){
+          rows = rows.filter(r => String(r[col]) === val);
+        }
+      });
+      // Search text filters
+      Object.keys(searchInputs).forEach(function(col){
+        var term = (searchInputs[col].value || '').toLowerCase().trim();
+        if (term){
+          rows = rows.filter(r => String(r[col] || '').toLowerCase().indexOf(term) !== -1);
+        }
+      });
+      return rows;
+    }
+
+    // Dedupe per (X, Color)
+    function dedupe(rows, xCol, yCol){
+      var policy = String(P.dedupePolicy || 'none');
+      if (policy === 'none' || !xCol || !yCol) return rows;
+      var cCol = selColor.value || null;
+      var groups = {};
+      rows.forEach(function(r){
+        var key = String(r[xCol]) + '||' + (cCol ? String(r[cCol]) : '');
+        if (!groups[key]) groups[key] = [];
+        groups[key].push(r);
+      });
+      var out = [];
+      Object.keys(groups).forEach(function(g){
+        var arr = groups[g];
+        if (!arr.length) return;
+        if (policy === 'first') { out.push(arr[0]); return; }
+        var yVals = arr.map(a => toNum(a[yCol])).filter(v => !Number.isNaN(v));
+        var val = yVals.length ? yVals[0] : NaN;
+        if (policy === 'max') val = Math.max.apply(null, yVals);
+        else if (policy === 'mean') val = yVals.reduce((s,v)=>s+v,0) / (yVals.length || 1);
+        var base = arr[0]; var merged = Object.assign({}, base); merged[yCol] = val; out.push(merged);
+      });
+      return out;
+    }
+
+    function render(){
+      var plotType = selPlotType.value || 'bar';
+      var xCol = selX.value; var yCol = selY.value;
+      var rows = filterRows();
+      rows = dedupe(rows, xCol, yCol);
+      var dcols = P.detailCols || [];
+
+      // Sorting for bar categories (primary/secondary)
+      var sort1 = selSort1.value || null;
+      var sort2 = selSort2.value || null;
+      var s1dir = selSort1Dir.value || 'asc';
+      var s2dir = selSort2Dir.value || 'asc';
+      var cmp1 = (s1dir === 'desc') ? cmpDesc : cmpAsc;
+      var cmp2 = (s2dir === 'desc') ? cmpDesc : cmpAsc;
+
+      if (plotType === 'bar'){
+        rows.sort(function(a, b){
+          var A1 = a[sort1]; var B1 = b[sort1];
+          var c = cmp1(isNumeric(A1)?A1:toNum(A1), isNumeric(B1)?B1:toNum(B1));
+          if (c !== 0 || !sort2) return c;
+          var A2 = a[sort2]; var B2 = b[sort2];
+          return cmp2(isNumeric(A2)?A2:toNum(A2), isNumeric(B2)?B2:toNum(B2));
+        });
+      }
+
+      var layout = {
+        title: P.title || (yCol + ' by ' + xCol),
+        template: 'plotly_white',
+        hovermode: 'closest',
+        margin: {l:80, r:40, t:70, b:130},
+        dragmode: 'select',
+      };
+
+      function hoverTemplate(){
+        var lines = [];
+        if (plotType === 'bar'){ lines.push('**%{x}**'); lines.push('Value: %{y:.4g}'); }
+        else { lines.push('**X=%{x:.4g}**'); lines.push('Y=%{y:.4g}'); }
+        dcols.forEach(function(c, i){ lines.push(c + ': %{customdata['+i+']}'); });
+        return lines.join('<br>') + '<extra></extra>';
+      }
+
+      var traces = [];
+
+      if (plotType === 'bar'){
+        var colorCol = selColor.value || null;
+        if (colorCol){
+          // One trace per color category -> grouped bars (prevents overlapping)
+          var cmap = colorMapFor(colorCol, rows);
+          var keys = uniq(rows.map(r => r[colorCol]).filter(v => v != null));
+          keys.forEach(function(k){
+            var x = [], y = [], cd = [];
+            rows.filter(r => String(r[colorCol]) === String(k)).forEach(function(r){
+              x.push(r[xCol]);
+              y.push(toNum(r[yCol]));
+              cd.push(dcols.map(function(dc){ return r[dc]; }));
+            });
+            traces.push({
+              type: 'bar',
+              name: String(k),
+              x: x,
+              y: y,
+              marker: { color: cmap[String(k)] || '#636EFA' },
+              customdata: cd,
+              hovertemplate: hoverTemplate()
+            });
+          });
+          layout.barmode = 'group';  // key fix to avoid stacking/overlay
+          layout.xaxis = { title: { text: xCol }, tickangle: -45 };
+          layout.yaxis = { title: { text: yCol }, automargin: true };
+        } else {
+          // Single-trace bar (no color grouping)
+          var x = [], y = [], cd = [];
+          rows.forEach(function(r){
+            x.push(r[xCol]);
+            y.push(toNum(r[yCol]));
+            cd.push(dcols.map(function(dc){ return r[dc]; }));
+          });
+          traces.push({
+            type: 'bar',
+            x: x,
+            y: y,
+            marker: { color: '#636EFA' },
+            customdata: cd,
+            hovertemplate: hoverTemplate()
+          });
+          layout.barmode = 'group'; // safe default
+          layout.xaxis = { title: { text: xCol }, tickangle: -45 };
+          layout.yaxis = { title: { text: yCol }, automargin: true };
+        }
+
+        // Optional initial zoom for categories
+        var initialZoom = P.initialZoom || null;
+        if (initialZoom){
+          var N = Math.max(1, Math.min(initialZoom, (traces[0] && traces[0].x ? traces[0].x.length : rows.length)));
+          // Categorical axis range works by index positions [-0.5, N-0.5]
+          layout.xaxis.range = [ -0.5, N - 0.5 ];
+        }
+      } else {
+        // Scatter (single trace)
+        var xs = [], ys = [], colors = [], customdata = [];
+        var cmap = colorMapFor(selColor.value, rows);
+        rows.forEach(function(r){
+          xs.push(toNum(r[xCol]));
+          ys.push(toNum(r[yCol]));
+          var colKey = selColor.value ? String(r[selColor.value]) : '';
+          colors.push((cmap && cmap[colKey]) || '#636EFA');
+          customdata.push(dcols.map(function(dc){ return r[dc]; }));
+        });
+        traces.push({
+          type: 'scatter',
+          mode: 'markers',
+          x: xs,
+          y: ys,
+          marker: { color: colors, size: 8, opacity: 0.9 },
+          customdata: customdata,
+          hovertemplate: hoverTemplate()
+        });
+        layout.xaxis = { title: { text: xCol }, automargin: true };
+        layout.yaxis = { title: { text: yCol }, automargin: true };
+        if (Array.isArray(P.initialXRange) && P.initialXRange.length===2){ layout.xaxis.range = P.initialXRange; }
+        if (Array.isArray(P.initialYRange) && P.initialYRange.length===2){ layout.yaxis.range = P.initialYRange; }
+      }
+
+      Plotly.react(plotEl, traces, layout);
+    }
+
+    // Bind events
+    selPlotType.addEventListener('change', render);
+    selX.addEventListener('change', render);
+    selY.addEventListener('change', render);
+    selColor.addEventListener('change', render);
+    selSort1.addEventListener('change', render);
+    selSort2.addEventListener('change', render);
+    selSort1Dir.addEventListener('change', render);
+    selSort2Dir.addEventListener('change', render);
+
+    function attachFilterListeners(){
+      Object.values(dropdownSelectors).forEach(function(el){ el.addEventListener('change', render); });
+      Object.values(searchInputs).forEach(function(el){ el.addEventListener('input', render); });
+    }
+
+    attachFilterListeners();
+
+    resetBtn.addEventListener('click', function(){
+      Object.values(dropdownSelectors).forEach(function(el){ el.value='__ALL__'; });
+      Object.values(searchInputs).forEach(function(el){ el.value=''; });
+      setOptions(selX, P.xOptions || [], (P.xOptions||[])[0]);
+      setOptions(selY, P.yOptions || [], (P.yOptions||[])[0]);
+      setOptions(selSort1, P.sortCols || [], (P.sortCols||[])[0]);
+      setOptions(selSort2, P.sortCols || [], (P.sortCols||[])[1] || '');
+      selSort1Dir.value = 'asc'; selSort2Dir.value = 'asc';
+      selPlotType.value = P.plotType || 'bar';
+      render();
+    });
+
+    // Robust TSV export: filtered + deduped rows
+    exportBtn.addEventListener('click', function(){
+      var xCol = selX.value; var yCol = selY.value;
+      var rows = dedupe(filterRows(), xCol, yCol);
+      var cols = (P.detailCols && P.detailCols.length) ? P.detailCols.slice() : (P.columns || []);
+      var header = cols.join('\t');
+      var lines = rows.map(function(r){
+        return cols.map(function(c){ return (r[c] != null ? String(r[c]) : ''); }).join('\t');
+      });
+      var tsv = [header].concat(lines).join('\n');
+
+      try {
+        var blob = new Blob([tsv], { type: 'text/tab-separated-values;charset=utf-8' });
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'export.tsv';
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(function(){
+          URL.revokeObjectURL(a.href);
+          document.body.removeChild(a);
+        }, 200);
+      } catch (e) {
+        console.warn('Export failed:', e);
+      }
+    });
+
+    // Initial render
+    render();
+  })();
+  </script>
+</body>
+</html>
+"""
+
+def save_html(out_path: str, payload: dict, title: Optional[str], self_contained: bool, plotly_file: Optional[str]):
+    if self_contained:
+        js_code = None
+        if plotly_file:
+            try:
+                with open(plotly_file, 'r', encoding='utf-8') as f:
+                    js_code = f.read()
+            except Exception:
+                js_code = None
+        if js_code is None:
+            js_code = PLOTLY_JS_INLINE_PLACEHOLDER
+        safe_js_code = js_code.replace('</script', '<\\/script')
+        plotly_script = "<script>\n" + safe_js_code + "\n</script>"
+    else:
+        plotly_script = '<script src="' + PLOTLY_JS_CDN + '"></script>'
+
+    payload_json = json.dumps(payload, ensure_ascii=False).replace('</script', '<\\/script')
+
+    html = (HTML_TEMPLATE
+            .replace('__TITLE__', title or (payload.get('title') or 'Interactive Plot'))
+            .replace('__PLOTLY_SCRIPT__', plotly_script)
+            .replace('__PAYLOAD_JSON__', payload_json))
+
+    with open(out_path, 'w', encoding='utf-8') as f:
+        f.write(html)
+
+def main():
+    ap = argparse.ArgumentParser(description='Flexible interactive plot maker (CSV/TSV -> HTML).')
+    ap.add_argument('--file', '-f', required=True, help='Input table (.tsv/.csv)')
+    ap.add_argument('--out', '-o', default='interactive_plot.html', help='Output HTML file')
+    ap.add_argument('--sep', default=None, help='Field separator (auto by extension if omitted)')
+    ap.add_argument('--encoding', default='utf-8', help='File encoding')
+
+    ap.add_argument('--plot-type', choices=['bar','scatter'], default='bar', help='Initial plot type')
+    ap.add_argument('--x-cols', nargs='+', default=[], help='Columns allowed for X-axis selection')
+    ap.add_argument('--y-cols', nargs='+', default=[], help='Columns allowed for Y-axis selection')
+    ap.add_argument('--color-col', default=None, help='Column to color points/bars by (categorical)')
+    ap.add_argument('--dropdown-cols', nargs='+', default=[], help='Columns to create dropdown filters for')
+    ap.add_argument('--search-cols', nargs='+', default=[], help='Columns to create search boxes for')
+    ap.add_argument('--detail-cols', nargs='+', default=[], help='Columns to show in hover/details and TSV export')
+    ap.add_argument('--sort-cols', nargs='+', default=[], help='Columns to sort X categories (primary/secondary)')
+
+    ap.add_argument('--initial-zoom', type=int, default=None, help='Initial number of bars shown (bar only)')
+    ap.add_argument('--initial-x-range', default=None, help='Initial X range for scatter, "a,b"')
+    ap.add_argument('--initial-y-range', default=None, help='Initial Y range for scatter, "a,b"')
+    ap.add_argument('--title', default=None, help='Page/plot title')
+    ap.add_argument('--dedupe-policy', choices=['none','first','max','mean'], default='none', help='Collapse duplicates per (X,Color) before plotting')
+
+    ap.add_argument('--self-contained', action='store_true', help='Embed Plotly.js inline for offline HTML')
+    ap.add_argument('--plotly-file', default=None, help='Path to local plotly.min.js to embed when --self-contained')
+    ap.add_argument('--top', type=int, default=None, help='Truncate to top N rows before embedding (sorted by first --sort-cols if provided)')
+
+    ap.add_argument('--auto-populate', action='store_true', help='Auto-fill X/Y/dropdown options from data if CLI lists are empty')
+
+    # CLI defaults
+    ap.add_argument('--default-plot-type', choices=['bar','scatter'], help='Default plot type')
+    ap.add_argument('--default-x', help='Default X-axis column')
+    ap.add_argument('--default-y', help='Default Y-axis column')
+    ap.add_argument('--default-color', help='Default color-by column')
+    ap.add_argument('--default-sort1', help='Default primary sort column')
+    ap.add_argument('--default-sort2', help='Default secondary sort column (tie-break)')
+    ap.add_argument('--default-sort1-dir', choices=['asc','desc'], help='Default primary sort direction')
+    ap.add_argument('--default-sort2-dir', choices=['asc','desc'], help='Default secondary sort direction')
+    ap.add_argument('--default-filters', help='JSON mapping {"Column":"Value", ...} for dropdown defaults')
+    ap.add_argument('--default-search', help='JSON mapping {"Column":"term", ...} for search defaults')
+
+    # Optional: JSON defaults file
+    ap.add_argument('--defaults-file', help='Path to JSON file with default selections (same keys as --default-*)')
+
+    args = ap.parse_args()
+
+    df = read_table(args.file, sep=args.sep, encoding=args.encoding)
+
+    # Validate requested columns exist (if provided)
+    missing = []
+    for lst in [args.x_cols, args.y_cols, args.dropdown_cols, args.search_cols, args.detail_cols, args.sort_cols]:
+        for c in lst:
+            if c and c not in df.columns:
+                missing.append(c)
+    if args.color_col and args.color_col not in df.columns:
+        missing.append(args.color_col)
+    if missing:
+        sys.stderr.write('[ERROR] Missing columns in input: ' + ', '.join(missing) + '\n')
+        sys.exit(1)
+
+    # Auto-populate menus if requested and lists are empty
+    if args.auto_populate:
+        auto = auto_columns(df)
+        if not args.x_cols:
+            args.x_cols = auto['x']
+        if not args.y_cols:
+            args.y_cols = auto['y']
+        if not args.dropdown_cols:
+            args.dropdown_cols = auto['dropdowns']
+
+    # Top-N truncation
+    if args.top:
+        if args.sort_cols and args.sort_cols[0] in df.columns:
+            df = df.sort_values(by=args.sort_cols[0], ascending=False).head(args.top)
+        else:
+            df = df.head(args.top)
+
+    payload = build_payload(
+        df=df,
+        plot_type=args.plot_type,
+        x_cols=args.x_cols,
+        y_cols=args.y_cols,
+        color_col=args.color_col,
+        dropdown_cols=args.dropdown_cols,
+        search_cols=args.search_cols,
+        detail_cols=args.detail_cols,
+        sort_cols=args.sort_cols,
+        initial_zoom=args.initial_zoom,
+        initial_x_range=parse_range(args.initial_x_range),
+        initial_y_range=parse_range(args.initial_y_range),
+        title=args.title,
+        dedupe_policy=args.dedupe_policy,
+    )
+
+    # Parse CLI JSON helpers
+    def parse_json_or_none(s):
+        if not s:
+            return None
+        try:
+            return json.loads(s)
+        except Exception:
+            return None
+
+    # Load defaults from file if provided
+    file_defaults = {}
+    if args.defaults_file:
+        try:
+            with open(args.defaults_file, 'r', encoding='utf-8') as f:
+                file_defaults = json.load(f)
+        except Exception as e:
+            sys.stderr.write('[WARN] Could not read defaults file: ' + str(e) + '\n')
+            file_defaults = {}
+
+    # Merge CLI defaults (CLI has priority over file)
+    defaults = dict(file_defaults)
+    if args.default_plot_type is not None:
+        defaults['plotType'] = args.default_plot_type
+    if args.default_x is not None:
+        defaults['xCol'] = args.default_x
+    if args.default_y is not None:
+        defaults['yCol'] = args.default_y
+    if args.default_color is not None:
+        defaults['colorCol'] = args.default_color
+    if args.default_sort1 is not None:
+        defaults['sort1'] = args.default_sort1
+    if args.default_sort2 is not None:
+        defaults['sort2'] = args.default_sort2
+    if args.default_sort1_dir is not None:
+        defaults['sort1Dir'] = args.default_sort1_dir
+    if args.default_sort2_dir is not None:
+        defaults['sort2Dir'] = args.default_sort2_dir
+
+    cli_filters = parse_json_or_none(args.default_filters)
+    cli_search = parse_json_or_none(args.default_search)
+    if cli_filters is not None:
+        defaults['filters'] = cli_filters
+    if cli_search is not None:
+        defaults['search'] = cli_search
+
+    # Attach defaults if any key present
+    if defaults:
+        payload['defaults'] = defaults
+
+    save_html(args.out, payload, title=args.title or 'Interactive Plot', self_contained=args.self_contained, plotly_file=args.plotly_file)
+    print(f'Saved: {args.out}')
+
+if __name__ == '__main__':
+    main()
+```
+
+```
+python flex_plot_maker_final.py \
+  --file top_10k.tsv \
+  --out defaults_demo.html \
+  --plot-type bar \
+  --x-cols "Gene name" \
+  --y-cols "Enrichment score" "log2_enrichment" \
+  --color-col "Cell type" \
+  --dropdown-cols "Cell type group" "Cell type" "Cell type class" \
+  --search-cols "Gene name" \
+  --detail-cols "Gene" "Gene name" "Cell type" "Enrichment score" "log2_enrichment" \
+  --sort-cols "Enrichment score" "overall_rank_by_Cell_Type" \
+  --title "Enrichment Plot" \
+  --dedupe-policy mean \
+  --self-contained --plotly-file plotly-2.30.0.min.js \
+  --default-plot-type bar \
+  --default-x "Gene name" \
+  --default-y "Enrichment score" \
+  --default-color "Cell type" \
+  --default-sort1 "Enrichment score" \
+  --default-sort2 "overall_rank_by_Cell_Type" \
+  --default-sort1-dir desc \
+  --default-sort2-dir asc \
+  --default-filters '{"Cell type group":"Immune","Cell type":"macrophage"}' \
+  --default-search '{"Gene name":"LALBA"}' \
+  --top 10000
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # 8-I Introduction
 
 and Finally I plotted it with universal plot maker
