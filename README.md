@@ -2876,6 +2876,8 @@ python flex_plot_maker_final.py \
   --default-sort2-dir asc \
   --default-filters '{"Cell type group":"Immune","Cell type":"macrophage"}' \
   --default-search '{"Gene name":"LALBA"}' \
+  --initial-zoom 100 \
+  --hide-legend \
   --top 10000
 ```
 
