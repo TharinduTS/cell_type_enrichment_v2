@@ -2133,9 +2133,10 @@ head -n 35000 ranked_genes.tsv > selected_ranked_genes.tsv
 
 I make plots with 
 
+# script
+
 flex_plot_maker_final.py
 ```
-
 #!/usr/bin/env python3
 """
 flex_plot_maker_final.py (grouped-color bars + robust TSV export + CLI defaults + a11y)
@@ -2149,6 +2150,7 @@ Generate a standalone interactive HTML from a CSV/TSV using Plotly.js.
 - --self-contained with optional --plotly-file to embed Plotly offline
 - Accessibility-friendly HTML: <html lang>, <meta viewport>, <title>, labeled selects
 - CLI defaults (--default-*) and JSON defaults via --defaults-file
+- UI toggle for Show legend + UI numeric input for Zoom level (bars)
 """
 
 import json
@@ -2323,6 +2325,16 @@ HTML_TEMPLATE = r"""
       </div>
     </div>
 
+    <!-- Legend toggle + Zoom level -->
+    <div class="ctrl">
+      <label for="showLegend">Show legend</label>
+      <input type="checkbox" id="showLegend" aria-label="Show legend" />
+    </div>
+    <div class="ctrl">
+      <label for="zoomLevel">Zoom level (bars)</label>
+      <input type="number" id="zoomLevel" min="1" step="1" aria-label="Zoom level" />
+    </div>
+
     <div class="ctrl">
       <label>&nbsp;</label>
       <div style="display:flex; gap:8px;">
@@ -2362,6 +2374,8 @@ HTML_TEMPLATE = r"""
     var selSort2 = document.getElementById('sort2');
     var selSort1Dir = document.getElementById('sort1Dir');
     var selSort2Dir = document.getElementById('sort2Dir');
+    var chkLegend = document.getElementById('showLegend');
+    var inpZoom = document.getElementById('zoomLevel');
     var resetBtn = document.getElementById('resetBtn');
     var exportBtn = document.getElementById('exportBtn');
     var filterRowsEl = document.getElementById('filterRows');
@@ -2385,6 +2399,11 @@ HTML_TEMPLATE = r"""
     setOptions(selSort2, P.sortCols || [], D.sort2 || (P.sortCols||[])[1] || '');
     selSort1Dir.value = D.sort1Dir || 'asc';
     selSort2Dir.value = D.sort2Dir || 'asc';
+
+    // Legend + Zoom defaults
+    chkLegend.checked = (D.showLegend !== undefined ? !!D.showLegend : true);
+    var initZoom = (typeof D.zoomLevel === 'number') ? D.zoomLevel : (P.initialZoom || null);
+    inpZoom.value = (initZoom !== null ? initZoom : '');
 
     // Build dropdown filters & search inputs
     filterRowsEl.innerHTML = '';
@@ -2517,6 +2536,7 @@ HTML_TEMPLATE = r"""
         hovermode: 'closest',
         margin: {l:80, r:40, t:70, b:130},
         dragmode: 'select',
+        showlegend: chkLegend.checked
       };
 
       function hoverTemplate(){
@@ -2576,12 +2596,11 @@ HTML_TEMPLATE = r"""
           layout.yaxis = { title: { text: yCol }, automargin: true };
         }
 
-        // Optional initial zoom for categories
-        var initialZoom = P.initialZoom || null;
-        if (initialZoom){
-          var N = Math.max(1, Math.min(initialZoom, (traces[0] && traces[0].x ? traces[0].x.length : rows.length)));
-          // Categorical axis range works by index positions [-0.5, N-0.5]
-          layout.xaxis.range = [ -0.5, N - 0.5 ];
+        // Initial zoom: use UI value if present, else fallback to initZoom
+        var z = parseInt(inpZoom.value);
+        var zoomBars = (!isNaN(z) && z > 0) ? z : initZoom;
+        if (zoomBars){
+          layout.xaxis.range = [ -0.5, zoomBars - 0.5 ];
         }
       } else {
         // Scatter (single trace)
@@ -2612,6 +2631,17 @@ HTML_TEMPLATE = r"""
       Plotly.react(plotEl, traces, layout);
     }
 
+    // Legend + Zoom interactions
+    chkLegend.addEventListener('change', function(){
+      Plotly.relayout(plotEl, { showlegend: chkLegend.checked });
+    });
+    inpZoom.addEventListener('input', function(){
+      var val = parseInt(inpZoom.value);
+      if (!isNaN(val) && val > 0 && selPlotType.value === 'bar'){
+        Plotly.relayout(plotEl, { 'xaxis.range': [-0.5, val - 0.5] });
+      }
+    });
+
     // Bind events
     selPlotType.addEventListener('change', render);
     selX.addEventListener('change', render);
@@ -2638,6 +2668,9 @@ HTML_TEMPLATE = r"""
       setOptions(selSort2, P.sortCols || [], (P.sortCols||[])[1] || '');
       selSort1Dir.value = 'asc'; selSort2Dir.value = 'asc';
       selPlotType.value = P.plotType || 'bar';
+      // Reset legend + zoom to defaults
+      chkLegend.checked = (D.showLegend !== undefined ? !!D.showLegend : true);
+      inpZoom.value = (typeof D.zoomLevel === 'number' ? D.zoomLevel : (P.initialZoom || ''));
       render();
     });
 
@@ -2730,7 +2763,7 @@ def main():
 
     ap.add_argument('--auto-populate', action='store_true', help='Auto-fill X/Y/dropdown options from data if CLI lists are empty')
 
-    # CLI defaults
+    # CLI defaults (existing)
     ap.add_argument('--default-plot-type', choices=['bar','scatter'], help='Default plot type')
     ap.add_argument('--default-x', help='Default X-axis column')
     ap.add_argument('--default-y', help='Default Y-axis column')
@@ -2741,6 +2774,10 @@ def main():
     ap.add_argument('--default-sort2-dir', choices=['asc','desc'], help='Default secondary sort direction')
     ap.add_argument('--default-filters', help='JSON mapping {"Column":"Value", ...} for dropdown defaults')
     ap.add_argument('--default-search', help='JSON mapping {"Column":"term", ...} for search defaults')
+
+    # NEW CLI defaults for legend + zoom
+    ap.add_argument('--default-show-legend', choices=['true','false'], help='Default for show legend (true/false)')
+    ap.add_argument('--default-zoom-level', type=int, help='Default zoom level for bars')
 
     # Optional: JSON defaults file
     ap.add_argument('--defaults-file', help='Path to JSON file with default selections (same keys as --default-*)')
@@ -2795,7 +2832,7 @@ def main():
         dedupe_policy=args.dedupe_policy,
     )
 
-    # Parse CLI JSON helpers
+    # JSON parsers
     def parse_json_or_none(s):
         if not s:
             return None
@@ -2803,6 +2840,11 @@ def main():
             return json.loads(s)
         except Exception:
             return None
+
+    def parse_bool_choice(s):
+        if s is None:
+            return None
+        return str(s).lower() == 'true'
 
     # Load defaults from file if provided
     file_defaults = {}
@@ -2840,6 +2882,12 @@ def main():
     if cli_search is not None:
         defaults['search'] = cli_search
 
+    # New defaults: legend + zoom
+    if args.default_show_legend is not None:
+        defaults['showLegend'] = parse_bool_choice(args.default_show_legend)
+    if args.default_zoom_level is not None:
+        defaults['zoomLevel'] = int(args.default_zoom_level)
+
     # Attach defaults if any key present
     if defaults:
         payload['defaults'] = defaults
@@ -2849,10 +2897,12 @@ def main():
 
 if __name__ == '__main__':
     main()
-```
+
 
 ```
-python flex_plot_maker.py \
+# run
+```
+python flex_plot_maker_final.py \
   --file top_10k.tsv \
   --out top_10k.html \
   --plot-type bar \
@@ -2865,6 +2915,7 @@ python flex_plot_maker.py \
   --sort-cols  "Enrichment score" "log2_enrichment" "Enrichment score (tau penalized)" "log2_enrichment_penalized" "overall_rank_by_Cell_Type" "overall_rank_by_Cell_group" "overall_rank_by_Cell_class" \
   --title "Celltype Enrichmnt" \
   --dedupe-policy mean \
+  --auto-populate \
   --self-contained --plotly-file plotly-2.30.0.min.js \
   --default-plot-type bar \
   --default-x "Gene name" \
@@ -2876,7 +2927,7 @@ python flex_plot_maker.py \
   --default-sort2-dir desc \
   --default-filters '{"Cell type group":"all","Cell type":"all"}' \
   --default-search '{"Gene name":""}' \
-  --top 10000 --default-zoom-level 50 --default-show-legend false
+  --top 10000 --default-zoom 100 --default-show-legend false
 ```
 
 
