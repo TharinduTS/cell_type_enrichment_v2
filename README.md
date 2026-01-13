@@ -2852,32 +2852,32 @@ if __name__ == '__main__':
 ```
 
 ```
-python flex_plot_maker_final.py \
+python flex_plot_maker.py \
   --file top_10k.tsv \
   --out defaults_demo.html \
   --plot-type bar \
   --x-cols "Gene name" \
-  --y-cols "Enrichment score" "log2_enrichment" \
+  --y-cols "Enrichment score" "log2_enrichment" "Enrichment score (tau penalized)" "log2_enrichment_penalized" \
   --color-col "Cell type" \
-  --dropdown-cols "Cell type group" "Cell type" "Cell type class" \
-  --search-cols "Gene name" \
-  --detail-cols "Gene" "Gene name" "Cell type" "Enrichment score" "log2_enrichment" \
-  --sort-cols "Enrichment score" "overall_rank_by_Cell_Type" \
-  --title "Enrichment Plot" \
-  --dedupe-policy mean \
+  --dropdown-cols "Cell type class" "Cell type group" "Cell type" \
+  --search-cols "Gene" "Gene name" \
+  --detail-cols "Gene" "Gene name" "Cell type" "Cell type group" "Cell type class" "Enrichment score" "log2_enrichment" "log2_enrichment_penalized" "top_percent_Cell_Type_count" "top_percent_Cell_group_count" "top_percent_Cell_class_count" "overall_rank_by_Cell_Type" "overall_rank_by_Cell_group" "overall_rank_by_Cell_class" "rank_within_Cell_Type" "rank_within_Cell_group" "rank_within_Cell_class" "top_percent_Cell_Types" "top_percent_Cell_groups" "top_percent_Cell_classes" \
+  --sort-cols  "Enrichment score" "log2_enrichment" "Enrichment score (tau penalized)" "log2_enrichment_penalized" "overall_rank_by_Cell_Type" "overall_rank_by_Cell_group" "overall_rank_by_Cell_class" \
+  --title "Celltype Enrichmnt" \
+  --dedupe-policy none \
   --self-contained --plotly-file plotly-2.30.0.min.js \
   --default-plot-type bar \
   --default-x "Gene name" \
-  --default-y "Enrichment score" \
+  --default-y "log2_enrichment_penalized" \
   --default-color "Cell type" \
-  --default-sort1 "Enrichment score" \
-  --default-sort2 "overall_rank_by_Cell_Type" \
-  --default-sort1-dir desc \
-  --default-sort2-dir asc \
-  --default-filters '{"Cell type group":"Immune","Cell type":"macrophage"}' \
-  --default-search '{"Gene name":"LALBA"}' \
-  --initial-zoom 100 \
-  --hide-legend \
+  --default-sort1 "overall_rank_by_Cell_Type" \
+  --default-sort2 "log2_enrichment_penalized" \
+  --default-sort1-dir asc \
+  --default-sort2-dir desc \
+  --default-filters '{"Cell type group":"all","Cell type":"all"}' \
+  --default-search '{"Gene name":""}' \
+  --default-zoom-level 100 \
+  --default-show-legend false \
   --top 10000
 ```
 
