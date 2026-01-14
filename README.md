@@ -1781,20 +1781,15 @@ python ../1.Combining_datasets/1.Raw_data/merge_tsv_by_keys.py \
 # 6) Rank genes on cell specific expresion
 
 # 6-I Introduction
-This step ranks genes globally based on their cell-type specificity and enrichment scores. It helps identify marker genes for specific cell types or groups by analyzing how many distinct categories (e.g., cell types, cell type groups, or classes) each gene appears in within the top subset of enriched rows.
-Key features:
+rank_genes.py ranks genes by enrichment and summarizes how many groups (e.g., Cell type, Cell type group, Cell type class) each gene appears in within a global top subset.
+You have full control over:
 
-Select a top percentage of rows globally based on an enrichment metric.
-Count the number of unique presence groups (e.g., cell types or classes) per gene in that subset.
-Rank genes:
+Grouping column (via --presence-col) used for ranking and “rank within group”.
+Uniqueness column (via --unique-col) used to count distinct values per gene.
+Selection & sorting metrics (--top-col, --sorting-col) and top‑% subset size.
+Output column names, filtering, and NA/negative handling.
 
-Primary: by number of presence groups (ascending → more specific).
-Secondary: by enrichment score (descending).
-
-
-Supports custom grouping column (e.g., Cell type, Cell type group, Cell type class).
-Allows custom output column names for clarity.
-Optional filters for NA and negative values.
+This lets you switch between cell‑type specific, group‑level, or class‑level views without changing the code—just alter the CLI flags.
 
 # 6-II Rank genes and estimate celltype counts script
 
@@ -1948,69 +1943,94 @@ if __name__ == "__main__":
 # 6-III CLI help
 ```txt
 
-usage: rank_genes.py --input INPUT --output OUTPUT
-                     [--top-percent TOP_PERCENT]
-                     [--min-top-rows MIN_TOP_ROWS]
-                     [--top-col TOP_COL]
-                     [--sorting-col SORTING_COL]
-                     [--gene-col GENE_COL]
-                     [--celltype-col CELLTYPE_COL]
-                     [--presence-col PRESENCE_COL]
-                     [--unique-celltypes]
-                     [--drop-zero-only]
-                     [--min-celltype-count MIN_COUNT]
-                     [--drop-na]
-                     [--drop-negatives]
-                     [--include-cols INCLUDE_COLS [INCLUDE_COLS ...]]
+
+usage: rank_genes.py [-h] --input INPUT --output OUTPUT
+                     [--top-percent TOP_PERCENT] [--min-top-rows MIN_TOP_ROWS]
+                     [--top-col TOP_COL] [--sorting-col SORTING_COL]
+                     [--gene-col GENE_COL] [--celltype-col CELLTYPE_COL]
+                     [--presence-col PRESENCE_COL] [--unique]
+                     [--unique-col UNIQUE_COL] [--drop-na] [--drop-negatives]
                      [--output-count-col OUTPUT_COUNT_COL]
                      [--output-list-col OUTPUT_LIST_COL]
                      [--output-overall-rank-col OUTPUT_OVERALL_RANK_COL]
                      [--output-rank-within-col OUTPUT_RANK_WITHIN_COL]
-                     [--verbose]
+                     [--include-cols INCLUDE_COLS [INCLUDE_COLS ...]] [--verbose]
 
-Rank genes globally and estimate group (cell-type/class/group) counts based on enrichment scores.
+Rank genes globally by enrichment and count groups.
 
-Required arguments:
-  --input INPUT                Path to input TSV file (enrichment results).
-  --output OUTPUT              Path to output TSV file with ranking.
+required arguments:
+  --input INPUT
+        Input TSV file (tab-delimited) containing columns like:
+        Gene, Gene name, Cell type, log2_enrichment_penalized, etc.
 
-Optional arguments:
-  --top-percent TOP_PERCENT    Top percentage of rows to consider globally (default: 25).
-  --min-top-rows MIN_TOP_ROWS  Minimum rows in global top subset (default: 1).
-  --top-col TOP_COL            Column for global subset selection (default: log2_enrichment_penalized).
-  --sorting-col SORTING_COL    Column for ranking (secondary key, descending).
-  --gene-col GENE_COL          Gene ID column (default: Gene).
-  --celltype-col CELLTYPE_COL  Deprecated alias for presence column (default: Cell type).
-  --presence-col PRESENCE_COL  Column used for presence/grouping (e.g., Cell type group).
-  --unique-celltypes           Deduplicate presence groups per gene when counting.
-  --drop-zero-only             Drop rows with zero group count.
-  --min-celltype-count MIN     Minimum group count to keep (default: 0).
-  --drop-na                    Drop rows with NaN in top/sorting columns.
-  --drop-negatives             Drop rows with negative values in top/sorting columns.
-  --include-cols COLS [...]    Columns to include in output (default: Gene, Gene name, Cell type, avg_nCPM, specificity_tau, Enrichment score (tau penalized), log2_enrichment_penalized).
-  --output-count-col NAME      Name for per-gene group count column (default: top_percent_celltype_count).
-  --output-list-col NAME       Name for per-gene group list column (default: top_percent_celltypes).
-  --output-overall-rank-col NAME Name for overall rank column (default: overall_rank).
-  --output-rank-within-col NAME Name for rank-within-group column (default: rank_within_celltype).
-  --verbose                    Print summary info.
+  --output OUTPUT
+        Output TSV file to write ranked results.
 
-Example:
-  python rank_genes.py \
-    --input enrich_values_with_cell_class_data.tsv \
-    --output ranked_genes_by_cell_type.tsv \
-    --top-percent 100 \
-    --top-col log2_enrichment_penalized \
-    --sorting-col log2_enrichment_penalized \
-    --gene-col Gene \
-    --presence-col "Cell type" \
-    --unique-celltypes \
-    --drop-na \
-    --drop-negatives \
-    --output-count-col top_percent_Cell_Type_count \
-    --output-list-col top_percent_Cell_Types \
-    --output-rank-within-col rank_within_Cell_Type \
-    --output-overall-rank-col overall_rank_by_Cell_Type \
-    --verbose
+top subset selection:
+  --top-percent TOP_PERCENT
+        Percentage (0–100) used to form the global top subset (default: 25.0).
+
+  --min-top-rows MIN_TOP_ROWS
+        Minimum number of rows to retain in the top subset (default: 1).
+
+  --top-col TOP_COL
+        Column used to determine eligibility for the top subset
+        (numeric; default: log2_enrichment_penalized).
+
+  --sorting-col SORTING_COL
+        Column used to sort descending before building the subset and
+        as the secondary key in the final ranking (numeric; default: log2_enrichment_penalized).
+
+entity & grouping:
+  --gene-col GENE_COL
+        Gene identifier column (default: Gene).
+
+  --celltype-col CELLTYPE_COL
+        Deprecated fallback for presence; used only if --presence-col is not set (default: "Cell type").
+
+  --presence-col PRESENCE_COL
+        Column defining the grouping used for "rank within group" and selection of rows
+        (e.g., "Cell type", "Cell type group", "Cell type class"). If omitted, falls back to --celltype-col.
+
+uniqueness controls:
+  --unique
+        Enable deduplication when counting groups per gene, using --unique-col.
+
+  --unique-col UNIQUE_COL
+        Column used to count unique values per gene (e.g., "Cell type group").
+        If omitted, defaults to the value of --presence-col.
+
+filters:
+  --drop-na
+        Drop rows where --top-col or --sorting-col are NaN after numeric coercion.
+
+  --drop-negatives
+        Drop rows where --top-col or --sorting-col are negative.
+
+output controls:
+  --output-count-col OUTPUT_COUNT_COL
+        Name of the per-gene group count column (default: group_count).
+
+  --output-list-col OUTPUT_LIST_COL
+        Name of the per-gene group list column (default: group_list).
+
+  --output-overall-rank-col OUTPUT_OVERALL_RANK_COL
+        Name of the overall rank column (default: overall_rank).
+
+  --output-rank-within-col OUTPUT_RANK_WITHIN_COL
+        Name of the rank-within-group column (default: rank_within_group).
+
+  --include-cols INCLUDE_COLS [INCLUDE_COLS ...]
+        Extra columns to keep in the output (default includes:
+        "Gene", "Gene name", "Cell type", "avg_nCPM", "specificity_tau",
+        "Enrichment score (tau penalized)", "log2_enrichment_penalized").
+
+misc:
+  --verbose
+        Print summary information to stdout.
+
+  -h, --help
+        Show this help message and exit.
 
 ```
 # 6-IV Run command
