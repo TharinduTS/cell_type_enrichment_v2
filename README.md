@@ -2109,7 +2109,7 @@ I am leaving this section for any last changes like column names changes , selec
 # 7-I
 #* First I select the number of rows I need in the plot like this
 ```bash
-head -n 35000 ranked_genes.tsv > selected_ranked_genes.tsv
+head -n 10000 ranked_genes_unique_celltypes_and_groups_and_classes.tsv > top_10k.tsv
 ```
 
 # 8) Making interactive plots
@@ -2894,17 +2894,17 @@ python flex_plot_maker_final.py \
   --color-col "Cell type" \
   --dropdown-cols "Cell type class" "Cell type group" "Cell type" \
   --search-cols "Gene" "Gene name" \
-  --detail-cols "Gene" "Gene name" "Cell type" "Cell type group" "Cell type class" "Enrichment score" "log2_enrichment" "log2_enrichment_penalized" "top_percent_Cell_Type_count" "top_percent_Cell_group_count" "top_percent_Cell_class_count" "overall_rank_by_Cell_Type" "overall_rank_by_Cell_group" "overall_rank_by_Cell_class" "rank_within_Cell_Type" "rank_within_Cell_group" "rank_within_Cell_class" "top_percent_Cell_Types" "top_percent_Cell_groups" "top_percent_Cell_classes" \
-  --sort-cols  "Enrichment score" "log2_enrichment" "Enrichment score (tau penalized)" "log2_enrichment_penalized" "overall_rank_by_Cell_Type" "overall_rank_by_Cell_group" "overall_rank_by_Cell_class" \
-  --title "Celltype Enrichmnt" \
-  --dedupe-policy mean \
+  --detail-cols "Gene" "Gene name" "Cell type" "Cell type group" "Cell type class" "Enrichment score" "log2_enrichment" "log2_enrichment_penalized" "top_percent_Cell_type_count" "top_percent_Cell_type_group_count" "top_percent_Cell_type_class_count" "overall_rank_by_Cell_type" "overall_rank_by_Cell_type_group" "overall_rank_by_Cell_type_class" "rank_within_Cell_type" "rank_within_Cell_type_group" "rank_within_Cell_type_class" "top_percent_Cell_types" "top_percent_Cell_type_groups" "top_percent_Cell_type_classes" \
+  --sort-cols  "Enrichment score" "log2_enrichment" "Enrichment score (tau penalized)" "log2_enrichment_penalized" "overall_rank_by_Cell_type" "overall_rank_by_Cell_type_group" "overall_rank_by_Cell_type_class" \
+  --title "Celltype Enrichmnt V 2.0" \
+  --dedupe-policy none \
   --auto-populate \
   --self-contained --plotly-file plotly-2.30.0.min.js \
   --default-plot-type bar \
   --default-x "Gene name" \
   --default-y "log2_enrichment_penalized" \
   --default-color "Cell type" \
-  --default-sort1 "overall_rank_by_Cell_Type" \
+  --default-sort1 "overall_rank_by_Cell_type" \
   --default-sort2 "log2_enrichment_penalized" \
   --default-sort1-dir asc \
   --default-sort2-dir desc \
