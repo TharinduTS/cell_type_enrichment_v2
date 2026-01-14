@@ -2097,7 +2097,7 @@ python rank_genes.py \
   --sorting-col log2_enrichment_penalized \
   --gene-col Gene \
   --output-count-col top_percent_Cell_type_class_count \
-  --output-list-col top_percent_Cell_type_classess \
+  --output-list-col top_percent_Cell_type_classes \
   --output-rank-within-col rank_within_Cell_type_class \
   --output-overall-rank-col overall_rank_by_Cell_type_class \
   --verbose
