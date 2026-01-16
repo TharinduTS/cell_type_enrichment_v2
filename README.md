@@ -2114,7 +2114,7 @@ I am leaving this section for any last changes like column names changes , selec
 head -n 10000 ranked_genes_unique_celltypes_and_groups_and_classes.tsv > top_10k.tsv
 ```
 
-# Then I added cluster categories (to add as a filter later on section 8) with a minimum limit with this script
+#* Then I added cluster categories (to add as a filter later on section 8) with a minimum limit with this script
 
 # 7_II Cluster categories
 ```py
