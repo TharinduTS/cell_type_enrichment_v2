@@ -2942,7 +2942,7 @@ if __name__ == '__main__':
 ```
 
 python universal_plot_maker_plus.py \
-  --file op_10k_with_cluster_categories.tsv \
+  --file top_10k_with_cluster_categories.tsv \
   --out Celltype_Enrichment_V2_1_top_10k.html \
   --plot-type bar \
   --x-choices "Gene name | Gene" \
