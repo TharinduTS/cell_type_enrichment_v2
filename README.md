@@ -2106,10 +2106,65 @@ python rank_genes.py \
 
 I am leaving this section for any last changes like column names changes , selecting data etc
 
-# 7-I
+# 7-I Select data
 #* First I select the number of rows I need in the plot like this
 ```bash
 head -n 10000 ranked_genes_unique_celltypes_and_groups_and_classes.tsv > top_10k.tsv
+```
+# Then I added cluster categories (to add as a filter later on section 8) with a minimum limit with this script
+
+# 7_II Cluster categories
+```py
+
+import pandas as pd
+import sys
+
+def main():
+    if len(sys.argv) != 6:
+        print("Usage: python categorize_column.py <input_file> <output_file> <selected_column> <selected_number> <result_column>")
+        sys.exit(1)
+
+    input_file = sys.argv[1]
+    output_file = sys.argv[2]
+    selected_column = sys.argv[3]
+    selected_number = float(sys.argv[4])
+    result_column = sys.argv[5]
+
+    # Load input file (auto-detect delimiter)
+    try:
+        df = pd.read_csv(input_file, sep=None, engine="python")
+    except Exception as e:
+        print(f"Error reading file: {e}")
+        sys.exit(1)
+
+    if selected_column not in df.columns:
+        print(f"Error: column '{selected_column}' not found.")
+        sys.exit(1)
+
+    # Create categorized column
+    df[result_column] = df[selected_column].apply(
+        lambda x: "1 or below" if float(x) < selected_number else "2 or higher"
+    )
+
+    # Save output *as TSV*
+    try:
+        df.to_csv(output_file, sep="\t", index=False)
+        print(f"TSV output written to {output_file}")
+    except Exception as e:
+        print(f"Error writing output: {e}")
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
+```
+# 7-III CLI help
+```
+python categorize_column.py <input_file> <output_file> <selected_column> <selected_number> <result_column>
+```
+# 7-IV Run command
+```bash
+python categorize_column.py top_10k.tsv top_10k_with_cluster_categories.tsv clusters_used 2 cluster_limit
 ```
 
 # 8) Making interactive plots
@@ -2885,32 +2940,29 @@ if __name__ == '__main__':
 ```
 # run
 ```
-python flex_plot_maker_final.py \
-  --file top_10k.tsv \
-  --out top_10k.html \
+
+python universal_plot_maker_plus.py \
+  --file op_10k_with_cluster_categories.tsv \
+  --out Celltype_Enrichment_V2_1_top_10k.html \
   --plot-type bar \
-  --x-cols "Gene name" \
-  --y-cols "Enrichment score" "log2_enrichment" "Enrichment score (tau penalized)" "log2_enrichment_penalized" \
-  --color-col "Cell type" \
-  --dropdown-cols "Cell type class" "Cell type group" "Cell type" \
-  --search-cols "Gene" "Gene name" \
-  --detail-cols "Gene" "Gene name" "Cell type" "Cell type group" "Cell type class" "Enrichment score" "log2_enrichment" "log2_enrichment_penalized" "top_percent_Cell_type_count" "top_percent_Cell_type_group_count" "top_percent_Cell_type_class_count" "overall_rank_by_Cell_type" "overall_rank_by_Cell_type_group" "overall_rank_by_Cell_type_class" "rank_within_Cell_type" "rank_within_Cell_type_group" "rank_within_Cell_type_class" "top_percent_Cell_types" "top_percent_Cell_type_groups" "top_percent_Cell_type_classes" \
-  --sort-cols  "Enrichment score" "log2_enrichment" "Enrichment score (tau penalized)" "log2_enrichment_penalized" "overall_rank_by_Cell_type" "overall_rank_by_Cell_type_group" "overall_rank_by_Cell_type_class" \
-  --title "Celltype Enrichmnt V 2.0" \
-  --dedupe-policy none \
-  --auto-populate \
-  --self-contained --plotly-file plotly-2.30.0.min.js \
-  --default-plot-type bar \
+  --x-choices "Gene name | Gene" \
+  --y-choices "Enrichment score|log2_enrichment| specificity_tau | Enrichment score (tau penalized)|log2_enrichment_penalized" \
   --default-x "Gene name" \
   --default-y "log2_enrichment_penalized" \
-  --default-color "Cell type" \
-  --default-sort1 "overall_rank_by_Cell_type" \
-  --default-sort2 "log2_enrichment_penalized" \
-  --default-sort1-dir asc \
-  --default-sort2-dir desc \
-  --default-filters '{"Cell type group":"all","Cell type":"all"}' \
-  --default-search '{"Gene name":""}' \
-  --top 10000 --default-zoom 100 --default-show-legend false
+  --color-col "Cell type" \
+  --color-choices "Cell type|Cell type group|Cell type class" \
+  --filter-cols "Cell type class|Cell type group|Cell type|cluster_limit" \
+  --search-cols "Gene|Gene name" \
+  --details "Gene|Gene name|Cell type|Cell type group|Cell type class|clusters_used|Enrichment score|log2_enrichment| specificity_tau |log2_enrichment_penalized|top_percent_Cell_type_count|top_percent_Cell_type_group_count|top_percent_Cell_type_class_count|overall_rank_by_Cell_type|overall_rank_by_Cell_type_group|overall_rank_by_Cell_type_class|rank_within_Cell_type|rank_within_Cell_type_group|rank_within_Cell_type_class|top_percent_Cell_types|top_percent_Cell_type_groups|top_percent_Cell_type_classes" \
+  --title "Celltype Enrichmnt V 2.1" \
+  --dup-policy overlay \
+  --sort-primary "overall_rank_by_Cell_type" \
+  --sort-primary-order asc \
+  --sort-secondary "log2_enrichment_penalized" \
+  --sort-secondary-order desc \
+  --initial-zoom 100 \
+  --self-contained \
+  --lang en
 ```
 
 
