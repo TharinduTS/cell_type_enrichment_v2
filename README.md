@@ -2167,7 +2167,17 @@ python categorize_column.py <input_file> <output_file> <selected_column> <select
 python categorize_column.py top_10k.tsv top_10k_with_cluster_categories.tsv clusters_used 2 cluster_limit
 ```
 
-# 8) Making interactive plots
+
+# 8) Making interactive plots universal_plot_maker_plus.py
+
+******to edit********
+
+
+
+
+
+
+
 
 I make plots with 
 
@@ -2940,7 +2950,6 @@ if __name__ == '__main__':
 ```
 # run
 ```
-
 python universal_plot_maker_plus.py \
   --file top_10k_with_cluster_categories.tsv \
   --out Celltype_Enrichment_V2_1_top_10k.html \
