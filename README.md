@@ -2173,6 +2173,43 @@ python categorize_column.py top_10k.tsv top_10k_with_cluster_categories.tsv clus
 
 # 8) Making interactive plots universal_plot_maker_plus.py
 
+I made interactive plots with my script here 
+
+# 8-I Script
+
+universal_plot_maker_plus.py
+```url
+https://github.com/TharinduTS/universal_plot_maker_plus/blob/main/README.md
+```
+# 8-II Run
+
+With following command
+
+```bash
+python universal_plot_maker_plus.py \
+  --file top_10k_with_cluster_categories.tsv \
+  --out Celltype_Enrichment_V2_1_top_10k.html \
+  --plot-type bar \
+  --x-choices "Gene name | Gene" \
+  --y-choices "Enrichment score|log2_enrichment| specificity_tau | Enrichment score (tau penalized)|log2_enrichment_penalized" \
+  --default-x "Gene name" \
+  --default-y "log2_enrichment_penalized" \
+  --color-col "Cell type" \
+  --color-choices "Cell type|Cell type group|Cell type class" \
+  --filter-cols "Cell type class|Cell type group|Cell type|cluster_limit" \
+  --search-cols "Gene|Gene name" \
+  --details "Gene|Gene name|Cell type|Cell type group|Cell type class|clusters_used|Enrichment score|log2_enrichment| specificity_tau |log2_enrichment_penalized|top_percent_Cell_type_count|top_percent_Cell_type_group_count|top_percent_Cell_type_class_count|overall_rank_by_Cell_type|overall_rank_by_Cell_type_group|overall_rank_by_Cell_type_class|rank_within_Cell_type|rank_within_Cell_type_group|rank_within_Cell_type_class|top_percent_Cell_types|top_percent_Cell_type_groups|top_percent_Cell_type_classes" \
+  --title "Celltype Enrichmnt V 2.1" \
+  --dup-policy overlay \
+  --sort-primary "overall_rank_by_Cell_type" \
+  --sort-primary-order asc \
+  --sort-secondary "log2_enrichment_penalized" \
+  --sort-secondary-order desc \
+  --initial-zoom 100 \
+  --self-contained \
+  --lang en
+```
+
 ******to edit********
 
 
@@ -2186,6 +2223,13 @@ I make plots with
 
 # script
 
+
+
+
+
+
+
+*
 flex_plot_maker_final.py
 ```
 #!/usr/bin/env python3
