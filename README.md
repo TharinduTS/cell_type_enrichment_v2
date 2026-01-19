@@ -2103,11 +2103,9 @@ python rank_genes.py \
   --output-overall-rank-col overall_rank_by_Cell_type_class \
   --verbose
 ```
-# 7) Final tweaks before plotting
+# 7) Cluster data integration
 
-I am leaving this section for any last changes like adding cluster data, column names changes , selecting data etc
-
-## 7-I Cluster data integration
+## 7-I Introduction
 
 #* First I added cluster categories (to add as a filter later on section 8) with a minimum limit with this script. You can select a custom number of clusters to filter by. Here I use 
 
@@ -2174,9 +2172,340 @@ python categorize_column.py ranked_genes_unique_celltypes_and_groups_and_classes
 lusters_used 2 cluster_limit
 ```
 
-## 7-V Select data
+# 8) Protein type data integration
 
-#* First I select the number of rows I need in the plot like this
+## 8-I Introduction
+
+I found data on protein types from HPA:
+
+"The human secretome comprises all proteins that are potentially secreted from the cell. These proteins were identified based on UniProt annotations of subcellular locations, along with computational predictions of signal peptides and transmembrane regions. The signal peptide is found in most secreted proteins, but also appears in some classes of membrane proteins. Therefore, the presence of transmembrane regions can be used to distinguish membrane proteins from secreted proteins. A whole-proteome scan of all Ensembl transcripts was performed using majority decision methods for signal peptide prediction (MDSEC) and membrane region prediction (MDM). Proteins with a predicted signal peptide by MDSEC and no predicted transmembrane region by MDM were considered secreted. Using this combined approach, the analysis predicts that 2520 genes (12% of all human protein-coding genes) encode at least one predicted secreted transcript or have at least one isoform with the subcellular location "Secreted" in UniProt." 
+
+HPA: https://www.proteinatlas.org/humanproteome/tissue/secretome#classification_of_the_secretome
+
+And I downloaded the dataset from
+```url
+https://www.proteinatlas.org/search/sa_location%3ASecreted+-+unknown+location%2CSecreted+in+brain%2CSecreted+in+female+reproductive+system%2CSecreted+in+male+reproductive+system%2CSecreted+in+other+tissues%2CSecreted+to+blood%2CSecreted+to+digestive+system%2CSecreted+to+extracellular+matrix%2CIntracellular+and+membrane%2CImmunoglobulin+genes
+```
+It had protein type data in the column 'Protein type' as the first comma seperated value that starts with 'Predicted'. I extracted those preotei type data with other needed columns with the following script
+
+## 8-II Script
+
+extract_regex.py
+```py
+
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+"""
+Extract the nth token from a delimited cell that matches a regex pattern,
+and output selected ID columns plus the matched token.
+
+Example:
+    python extract_regex.py \
+        --input input.tsv \
+        --output output.tsv \
+        --file-delim "\t" \
+        --id-cols Gene Ensembl \
+        --target-col "Protein class" \
+        --value-sep "," \
+        --pattern "Predicted|Secreted" \
+        --nth 1 \
+        --ignore-case \
+        --chunksize 200000
+"""
+
+import argparse
+import sys
+import re
+import pandas as pd
+from typing import List, Optional
+
+
+def pick_nth_regex(cell: Optional[str],
+                   pattern: str,
+                   sep: str,
+                   nth: int,
+                   ignore_case: bool,
+                   match_anywhere: bool = False) -> str:
+    """
+    From a delimited string cell, return the nth token that matches `pattern`.
+    - nth is 1-based.
+    - Returns empty string if not found or cell is null.
+    - By default, uses `re.match()` (start-of-string). If match_anywhere=True, uses `re.search()`.
+    """
+    if cell is None or (isinstance(cell, float) and pd.isna(cell)):
+        return ""
+    text = str(cell)
+
+    tokens = [tok.strip() for tok in text.split(sep)]
+
+    flags = re.IGNORECASE if ignore_case else 0
+    try:
+        rx = re.compile(pattern, flags)
+    except re.error as rex:
+        # Bubble up a clearer message for invalid regex
+        raise ValueError(f"Invalid regex pattern '{pattern}': {rex}")
+
+    matcher = rx.search if match_anywhere else rx.match
+    matches = [tok for tok in tokens if matcher(tok)]
+
+    if nth <= 0:
+        return ""
+    return matches[nth - 1] if len(matches) >= nth else ""
+
+
+def process_chunk(df: pd.DataFrame,
+                  id_cols: List[str],
+                  target_col: str,
+                  pattern: str,
+                  value_sep: str,
+                  nth: int,
+                  ignore_case: bool,
+                  match_anywhere: bool) -> pd.DataFrame:
+    if target_col not in df.columns:
+        raise KeyError(f"Target column '{target_col}' not found. Available: {list(df.columns)}")
+
+    missing_id = [c for c in id_cols if c not in df.columns]
+    if missing_id:
+        raise KeyError(f"ID columns not found: {missing_id}. Available: {list(df.columns)}")
+
+    extracted = df[target_col].apply(
+        lambda x: pick_nth_regex(
+            x,
+            pattern=pattern,
+            sep=value_sep,
+            nth=nth,
+            ignore_case=ignore_case,
+            match_anywhere=match_anywhere
+        )
+    )
+
+    out_match_col = f"{target_col}__regex_nth{nth}"
+    out_df = df[id_cols].copy()
+    out_df[out_match_col] = extracted
+    return out_df
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Extract nth token matching a regex from a delimited column.")
+    parser.add_argument("--input", required=True, help="Path to input file (TSV/CSV/other delimited).")
+    parser.add_argument("--output", required=True, help="Path to output file.")
+    parser.add_argument("--file-delim", default="\t", help=r"File delimiter. Default: '\t'.")
+    parser.add_argument("--id-cols", nargs="+", required=True, help="Columns to pass through (e.g., Gene Ensembl).")
+    parser.add_argument("--target-col", required=True, help="Column containing delimited values (e.g., 'Protein class').")
+    parser.add_argument("--value-sep", default=",", help="Separator used inside target column values. Default: ','.")
+    parser.add_argument("--pattern", required=True,
+                        help=("Regex pattern to match tokens. "
+                              "Examples: 'Predicted|Secreted' (start-only via default), "
+                              "'^(Predicted|Secreted)', or '.*(Predicted|Secreted).*' with --match-anywhere."))
+    parser.add_argument("--nth", type=int, default=1, help="Which match to pick (1-based). Default: 1.")
+    parser.add_argument("--ignore-case", action="store_true", help="Case-insensitive regex matching.")
+    parser.add_argument("--match-anywhere", action="store_true",
+                        help="Use regex search anywhere in token (re.search). Default is start-only (re.match).")
+    parser.add_argument("--chunksize", type=int, default=None, help="Read file in chunks (rows per chunk).")
+    parser.add_argument("--encoding", default="utf-8", help="Input file encoding. Default: utf-8.")
+    parser.add_argument("--output-delim", default="\t", help=r"Output file delimiter. Default: '\t'.")
+
+    args = parser.parse_args()
+
+    if args.nth <= 0:
+        print("--nth must be >= 1", file=sys.stderr)
+        sys.exit(2)
+
+    try:
+        if args.chunksize:
+            wrote_header = False
+            for chunk in pd.read_csv(
+                args.input,
+                sep=args.file_delim,
+                dtype=str,
+                chunksize=args.chunksize,
+                encoding=args.encoding,
+                keep_default_na=False
+            ):
+                out_chunk = process_chunk(
+                    chunk,
+                    id_cols=args.id_cols,
+                    target_col=args.target_col,
+                    pattern=args.pattern,
+                    value_sep=args.value_sep,
+                    nth=args.nth,
+                    ignore_case=args.ignore_case,
+                    match_anywhere=args.match_anywhere
+                )
+                out_chunk.to_csv(
+                    args.output,
+                    sep=args.output_delim,
+                    index=False,
+                    mode="w" if not wrote_header else "a",
+                    header=not wrote_header,
+                    encoding="utf-8"
+                )
+                wrote_header = True
+        else:
+            df = pd.read_csv(
+                args.input,
+                sep=args.file_delim,
+                dtype=str,
+                encoding=args.encoding,
+                keep_default_na=False
+            )
+            out_df = process_chunk(
+                df,
+                id_cols=args.id_cols,
+                target_col=args.target_col,
+                pattern=args.pattern,
+                value_sep=args.value_sep,
+                nth=args.nth,
+                ignore_case=args.ignore_case,
+                match_anywhere=args.match_anywhere
+            )
+            out_df.to_csv(args.output, sep=args.output_delim, index=False, encoding="utf-8")
+
+    except KeyError as ke:
+        print(f"[Error] {ke}", file=sys.stderr)
+        sys.exit(1)
+    except FileNotFoundError as fe:
+        print(f"[Error] {fe}", file=sys.stderr)
+        sys.exit(1)
+    except pd.errors.ParserError as pe:
+        print(f"[Parse Error] {pe}", file=sys.stderr)
+        sys.exit(1)
+    except ValueError as ve:
+        print(f"[Regex Error] {ve}", file=sys.stderr)
+        sys.exit(1)
+    except Exception as e:
+        print(f"[Unexpected Error] {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
+```
+
+## 8-III CLI help
+
+Usage
+```
+python extract_regex.py [options]
+```
+Command‑Line Help — extract_regex.py
+====================================
+
+extract_regex.py extracts the n‑th token from a delimited column (e.g., “Protein class”)
+that matches a user‑supplied regex pattern. It supports TSV/CSV files, regex matching,
+multiple prefixes, case‑insensitive searches, chunked processing for large files, and
+customizable delimiters.
+
+USAGE
+-----
+    python extract_regex.py [options]
+
+OPTIONS
+-------
+
+Input / Output
+--------------
+--input <path>           (Required) Path to input TSV/CSV file.
+--output <path>          (Required) Path to output file.
+--file-delim <char>      File delimiter. Default: \t
+--output-delim <char>    Output file delimiter. Default: \t
+--encoding <encoding>    File encoding. Default: utf‑8.
+
+Column Selection
+----------------
+--id-cols <col1 col2...> (Required) Columns to keep in output (e.g., Gene Ensembl).
+--target-col <column>    (Required) Column containing the delimited values to parse.
+
+Token Parsing
+-------------
+--value-sep <char>       Separator inside the target column. Default: ,
+--pattern <regex>        (Required) Regex pattern to match tokens.
+                         Examples:
+                           "Predicted|Secreted"
+                           "^(Predicted|Secreted)"
+                           ".*(Predicted|Secreted).*"
+--nth <int>              Select the n‑th matching token (1‑based). Default: 1.
+--ignore-case            Enable case‑insensitive regex matching.
+--match-anywhere         Use re.search() instead of re.match().
+                         Default behavior uses re.match() (anchored at start).
+
+Performance
+-----------
+--chunksize <int>        Process file in chunks (e.g., 200000) for large datasets.
+
+BEHAVIOR SUMMARY
+----------------
+• The target column is split into tokens using the delimiter (default comma).
+• Tokens are trimmed.
+• Regex is applied to each token:
+    - Default: re.match() → matches only at the start of the token.
+    - With --match-anywhere: re.search() → matches anywhere in token.
+• The script extracts the n‑th match (1‑based index).
+• Output contains:
+    - All selected --id-cols
+    - A new column named:
+        <target-col>__regex_nth<n>
+
+EXAMPLES
+--------
+
+1) First token starting with “Predicted” or “Secreted”
+------------------------------------------------------
+    python extract_regex.py \
+        --input genes.tsv \
+        --output out.tsv \
+        --file-delim $'\t' \
+        --id-cols Gene Ensembl \
+        --target-col "Protein class" \
+        --value-sep "," \
+        --pattern 'Predicted|Secreted' \
+        --nth 1 \
+        --ignore-case
+
+2) Second matching token
+------------------------
+    python extract_regex.py \
+        --input genes.tsv \
+        --output out2.tsv \
+        --id-cols Gene Ensembl \
+        --target-col "Protein class" \
+        --pattern 'Predicted|Secreted' \
+        --nth 2 \
+        --ignore-case
+
+3) Match anywhere, not just start
+---------------------------------
+    python extract_regex.py \
+        --input genes.tsv \
+        --output out_anywhere.tsv \
+        --id-cols Gene Ensembl \
+        --target-col "Protein class" \
+        --value-sep "," \
+        --pattern '(Predicted|Secreted)' \
+        --match-anywhere \
+        --ignore-case
+
+4) Large files: chunked processing
+----------------------------------
+    python extract_regex.py \
+        --input bigfile.tsv \
+        --output out_big.tsv \
+        --id-cols Gene Ensembl \
+        --target-col "Protein class" \
+        --pattern 'Predicted|Secreted' \
+        --chunksize 250000
+
+NOTES
+-----
+• Regex patterns must be quoted properly in shell environments.
+• For TSV files, prefer --file-delim $'\t' to ensure correct parsing.
+• Missing or empty target values produce empty output tokens.
+
+
+## 7-VISelect data
+
+#* Finally I select the number of rows I need in the plot like this
 
 ```bash
 head -n 10000 ranked_genes_unique_celltypes_and_groups_and_classes.tsv > top_10k.tsv
