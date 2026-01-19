@@ -2385,6 +2385,7 @@ if __name__ == "__main__":
 
 ## 8-III CLI help
 
+```txt
 USAGE
 -----
     python extract_regex.py [options]
@@ -2489,7 +2490,20 @@ NOTES
 • Regex patterns must be quoted properly in shell environments.
 • For TSV files, prefer --file-delim $'\t' to ensure correct parsing.
 • Missing or empty target values produce empty output tokens.
-
+```
+# 8-IV Run
+```bash
+python extract_regex.py \
+  --input secretome_dataset.tsv \
+  --output genes_with_protein_type.tsv \
+  --file-delim $'\t' \
+  --id-cols Gene Ensembl \
+  --target-col "Protein class" \
+  --value-sep "," \
+  --pattern "Predicted" \
+  --nth 1 \
+  --ignore-case
+```
 
 ## 7-VISelect data
 
