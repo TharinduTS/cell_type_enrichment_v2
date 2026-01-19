@@ -1,4 +1,4 @@
-# Cell_Type_enrichment_v2.1 
+# Cell_Type_enrichment_V_2.1 
 
 This is an enhanced version of cell type enrichment script to identify cell type specific gene expression and cell type enriched gene expression
 
