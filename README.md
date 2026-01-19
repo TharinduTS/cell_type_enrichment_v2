@@ -22,7 +22,7 @@ source ~/envs/scanpy/bin/activate
 
 # 1) Combining datasets
 
-# 1-I Introduction
+## 1-I Introduction
 I am using two main datasets available here
 
 HPA has,
@@ -57,7 +57,7 @@ adipose tissue  c-1     adipocytes      mature adipocytes       mesenchymal cell
 adipose tissue  c-2     adipocytes      mature adipocytes       mesenchymal cells       6993    yes     high
 ```
 
-# 1-II Merge script
+## 1-II Merge script
 Because I need cell count data for my analysis, I start by combining these dataframes to add columns "Cell count" , "Included in aggregation", "Annotation reliability" from rna_single_cell_clusters.tsv to rna_single_cell_cluster.tsv matching by Cluster.
 I did this with merge_tsv_by_keys.py
 
@@ -244,7 +244,7 @@ def main():
 if __name__ == "__main__":
     main()
 ```
-# 1-III CLI help
+## 1-III CLI help
 CLI help
 
 #**************	NOTE ************************************
@@ -328,7 +328,7 @@ python merge_tsv_by_keys.py \
   --right-cols "Cell count,Annotation reliability" \
   --out merged.tsv
 ```
-# 1-IV Used command
+## 1-IV Used command
 #*I Used the following command*
 ```bash
 python merge_tsv_by_keys.py \
@@ -351,7 +351,7 @@ ENSG00000000003 TSPAN6  ovary   c-4     vascular endothelial cells      164     
 
 # 2) Filtering combined dataset
 
-# 2-I Introduction
+## 2-I Introduction
 Then I wanted to filter data that are not reliable. 
 
 Human Protein atlas explains their filtration procedure as following
@@ -362,7 +362,7 @@ I followed the same filtering parameters
 
 Following script tries to replicate thier filtering methods
 
-# 2-II Filtering Script
+## 2-II Filtering Script
 filter_integration_long.py
 ```py
 
@@ -810,7 +810,7 @@ if __name__ == "__main__":
     main()
 
 ```
-# 2-III CLI help
+## 2-III CLI help
 ```txt
 
 usage: filter_integration_long.py [-h] --input INPUT --output OUTPUT
@@ -951,7 +951,7 @@ examples:
     --verbose
 
 ```
-# 2-IV Run command
+## 2-IV Run command
 #*I am running it like following*
 ```bash
 python filter_integration_long.py \
@@ -971,10 +971,10 @@ This dropped a total of 161 clusters out of 1175 clusters exactly like HPA pipel
 
 # 3) Cell type enrichment
 
-# 3-I Introduction
+## 3-I Introduction
 Then I used my script celltype_enrichment_v1_4.py to calculate weighted nCPM by cell count, celltype enrichment, select top gene-cell type combinations, enforce median scaling and safeguards
 
-# 3-II Celltype enrichment script
+## 3-II Celltype enrichment script
 celltype_enrichment_v1_4.py
 
 ```py
@@ -1469,7 +1469,7 @@ def main():
 if __name__ == "__main__":
     main()
 ```
-# 3-III Celltype enrichment runner
+## 3-III Celltype enrichment runner
 I ran it with the following runner
 
 run_celltype_enrichment_v1_4.sh
@@ -1558,14 +1558,14 @@ args+=("$@")
 python3 "${script_dir}/celltype_enrichment_v1_4.py" "${args[@]}"
 
 ```
-# 3-IV Run command
+## 3-IV Run command
 Then I ran it like
 ```
 ./run_celltype_enrichment_v1_4.sh --input-file combined_expression_data_filtered.tsv --output-file enrichment_values_for_filtered_celltypes.tsv --min-clusters 1 --min-count 50 --specificity-mode penalize --min-specificity 1
 ```
 # 4) Visualizing Enrichment Distributions
 
-# 4-I Introduction
+## 4-I Introduction
 
 This section provides a simple CLI tool to visualize the distribution of values in any numeric column (e.g., log2_enrichment_penalized) from a TSV/CSV file. It adds:
 
@@ -1584,7 +1584,7 @@ log₂ = 0 → Neutral (observed ≈ expected; enrichment score = 1)
 
 This script makes it easy to see that boundary and inspect data near the neutral point.
 
-# 4-II Script
+## 4-II Script
 
 plot_distribution.py
 ```py
@@ -1673,7 +1673,7 @@ def main():
 if __name__ == "__main__":
     main()
 ```
-# 4-III CLI Help
+## 4-III CLI Help
 ```txt
 
 usage: plot_distribution.py [-h] -i INPUT -c COLUMN [-d DELIMITER] [-o OUTPUT]
@@ -1696,7 +1696,7 @@ options:
   --export-near-zero EXPORT_NEAR_ZERO
                         Export near-zero rows to CSV file
 ```
-# 4-IV Run
+## 4-IV Run
 
 #* I ran it like following
 ```bash
@@ -1718,7 +1718,7 @@ log2_enrichment_penalized_distribution.png
 
 # 5) Add celltype info layers
 
-# 5-I Introduction
+## 5-I Introduction
 
 My enrichment value table only has cell type information. But it can be useful to have information like cell type group and cell type class. I am adding those layers to the dataset here
 
@@ -1728,7 +1728,7 @@ https://www.proteinatlas.org/download/tsv/rna_single_cell_type_cell_types.tsv.zi
 ```
 I can use the same merging script from section 1
 
-# 5-II Run command
+## 5-II Run command
 
 I Run it like following
 
@@ -1741,7 +1741,7 @@ python ../1.Combining_datasets/1.Raw_data/merge_tsv_by_keys.py \
   --right-cols "Cell type group,Cell type class" \
   --out  enrich_values_with_cell_class_data.tsv
 ```
-# 5-III Fixing celltypes with missing groups
+## 5-III Fixing celltypes with missing groups
 
 As I am changing filtering values as needed, sometimes 'rna_single_cell_type_cell_types.tsv' does not have all the 'cell type groups' and 'cell type classes' for all the cell types in enrichment table. Therefore I have to look for rows with missing values for 'Cell type group' and ' Cell type class' with following command
 ```bash
@@ -1780,7 +1780,7 @@ python ../1.Combining_datasets/1.Raw_data/merge_tsv_by_keys.py \
 
 # 6) Rank genes on cell specific expresion
 
-# 6-I Introduction
+## 6-I Introduction
 rank_genes.py ranks genes by enrichment and summarizes how many groups (e.g., Cell type, Cell type group, Cell type class) each gene appears in within a global top subset.
 You have full control over:
 
@@ -1791,7 +1791,7 @@ Output column names, filtering, and NA/negative handling.
 
 This lets you switch between cell‑type specific, group‑level, or class‑level views without changing the code—just alter the CLI flags.
 
-# 6-II Rank genes and estimate celltype counts script
+## 6-II Rank genes and estimate celltype counts script
 
 rank_genes.py
 ```py
@@ -1940,7 +1940,7 @@ if __name__ == "__main__":
 
 
 ```
-# 6-III CLI help
+## 6-III CLI help
 ```txt
 
 
@@ -2033,7 +2033,7 @@ misc:
         Show this help message and exit.
 
 ```
-# 6-IV Run command
+## 6-IV Run command
 #*I ran it like following*
 
 #*I Ranked these first by 'Cell type'*
@@ -2106,7 +2106,7 @@ python rank_genes.py \
 
 I am leaving this section for any last changes like adding cluster data, column names changes , selecting data etc
 
-# 7-I Cluster data integration
+## 7-I Cluster data integration
 
 #* First I added cluster categories (to add as a filter later on section 8) with a minimum limit with this script. You can select a custom number of clusters to filter by. Here I use 
 
@@ -2114,7 +2114,7 @@ I am leaving this section for any last changes like adding cluster data, column 
 
 2 or above as limits
 
-# 7_II Cluster categories script
+## 7_II Cluster categories script
 
 categorize_column.py
 ```py
@@ -2161,11 +2161,11 @@ def main():
 if __name__ == "__main__":
     main()
 ```
-# 7-III CLI help
+## 7-III CLI help
 ```
 python categorize_column.py <input_file> <output_file> <selected_column> <selected_number> <result_column>
 ```
-# 7-IV Run command
+## 7-IV Run command
 
 I ran it like following
 ```bash
@@ -2173,7 +2173,7 @@ python categorize_column.py ranked_genes_unique_celltypes_and_groups_and_classes
 lusters_used 2 cluster_limit
 ```
 
-# 7-V Select data
+## 7-V Select data
 
 #* First I select the number of rows I need in the plot like this
 
@@ -2185,13 +2185,13 @@ head -n 10000 ranked_genes_unique_celltypes_and_groups_and_classes.tsv > top_10k
 
 I made interactive plots with my script here 
 
-# 8-I Script
+## 8-I Script
 
 universal_plot_maker_plus.py
 ```url
 https://github.com/TharinduTS/universal_plot_maker_plus/blob/main/README.md
 ```
-# 8-II Run
+## 8-II Run
 
 With following command
 
@@ -2221,14 +2221,14 @@ python universal_plot_maker_plus.py \
 ```
 # 9) User interface
 
-# 9-I Snapshot
+## 9-I Snapshot
 
 Following is a snapshot of what CellType Enrichment V 2.1 looks like.
 
 <img width="974" height="489" alt="image" src="https://github.com/user-attachments/assets/e8189671-8478-4e14-b6eb-24c61aa00d47" />
 A view of user interface
 
-# 9-II Plot behavior 
+## 9-II Plot behavior 
 1	Plot Type – This allows you to select the plot time you want to visualize data in. At the moment, I am only using bar plots as they make most sense for this type of data
 
 2	Color by – This allows you to select which column you want to color your data by. Eg: Cell type gives different colors to different cell types/ Cell type group color bars by the cell type group
@@ -2249,7 +2249,7 @@ A view of user interface
 
 
 
-# 9-III Filter Menus
+## 9-III Filter Menus
 
 1	Cell type class- Lets you filter data by cell type class
 
@@ -2259,19 +2259,19 @@ A view of user interface
 
 4	Cluster limit – Lets you filter data based on how many clusters were used for the calculation. For now it lets you select all, one cluster or below and 2 clusters or above.
 
-# 9-IV Search Bars
+## 9-IV Search Bars
 
 1	Search in Gene – Lets you search genes by gene ID 
 
 2	Search in Gene name – Lets you search genes by gene name
 
-# 9-V Buttons
+## 9-V Buttons
 
 1	Reset – Resets the plot to original values
 
 2	Export TSV – Exports currently selected data as a TSV file
 
-# 9- VI Information shown
+## 9- VI Information shown
 
 1	Gene – Gene ID
 
@@ -2322,9 +2322,9 @@ So basically, if a gene is  only expressed in one cell type, gene with a higher 
 
 22	top_percent_Cell_type_classes - cell type class/es the current gene is expressed in
 
-# 9-VII Use cases
+## 9-VII Use cases
 
-## Visualizing
+### Visualizing
 
 By Default, CellType Enrichment V2.1 loads with Gene name as X axis and Log2 Enrichment value penalized by specificity score as Y axis. I think this is a good starting point as log2_enrichment puts background level expression level on 0 and it is easier to interpret. 
 With defaults set to overlay plots and Primary sort by overall rank by cell type. This plot puts genes that are only expressed in one cell type with highest enrichment score first. Then it plots gradually decreasing enrichment values: still for genes that are only expressed in one cell type (see figure below).
@@ -2338,26 +2338,26 @@ If you keep scrolling right, then it starts plotting genes that are expressed in
 <img width="974" height="370" alt="image" src="https://github.com/user-attachments/assets/c0f063bb-f2b6-491a-b964-997992ea985e" />
 Transition from genes expressed in one cell type to genes expressed in two cell types
 
-## Filtering
+### Filtering
 
 Filtering Menus gives you the values sorted according to sort columns just like before, but for individual cell type class, cell type group and cell type (see following figure as an example)
 
 <img width="974" height="370" alt="image" src="https://github.com/user-attachments/assets/d235d090-079e-45be-8fc5-5ae16bf8c7c8" />
 Transition from genes expressed in one cell type to genes expressed in two cell types - filtered for cell type class blood and immune cells
 
-## Downloading
+### Downloading
 
 This script gives you multiple ways to select and download data with ‘Export TSV’ button.
 
-Normal download
+#### Normal download
 
 On the normal view, you can just select and download data for any selection with the tools baked into the plot viewer.
 
-A specific number of data points.
+#### A specific number of data points.
 
 Entering a value in the box ‘Bars to show’ lets you select a specific number of data points in the current view and download that number of data points.
 
-Sorted data points and top values
+#### Sorted data points and top values
 
 In addition to these, you can use sort and filter menus to select your download.
 
@@ -2365,7 +2365,7 @@ As an example, if you want to download the top values for each cell type, you ca
 
 Then you can use secondary sort as ‘cell type’ 
 
-NOTE: This last part may need a little more work to get it working perfectly
+#*NOTE: This last part may need a little more work to get it working perfectly*
 
 
 
