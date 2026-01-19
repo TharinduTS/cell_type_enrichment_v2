@@ -2332,6 +2332,7 @@ With defaults set to overlay plots and Primary sort by overall rank by cell type
 <img width="974" height="300" alt="image" src="https://github.com/user-attachments/assets/a4fbd386-018f-44f9-ab23-8c03b36fff71" />
 Overall gene ranking
 
+
 If you keep scrolling right, then it starts plotting genes that are expressed in two cell types, but highly biased to one cell type. And then genes expressed in two cell types, with a lesser expression bias to one cell type and so on. Different colors represent different cell types here. Figure 4 below shows transition from genes that express in only one cell type to two cell types.
 
 <img width="974" height="370" alt="image" src="https://github.com/user-attachments/assets/c0f063bb-f2b6-491a-b964-997992ea985e" />
