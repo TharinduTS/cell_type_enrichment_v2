@@ -2219,894 +2219,157 @@ python universal_plot_maker_plus.py \
   --self-contained \
   --lang en
 ```
+# 9) User interface
 
-******to edit********
+# 9-I Snapshot
 
+Following is a snapshot of what CellType Enrichment V 2.1 looks like.
 
+<img width="974" height="489" alt="image" src="https://github.com/user-attachments/assets/e8189671-8478-4e14-b6eb-24c61aa00d47" />
+A view of user interface
 
-
-
-
-
-
-I make plots with 
-
-# script
-
-
-
-
-
-
-
-*
-flex_plot_maker_final.py
-```
-#!/usr/bin/env python3
-"""
-flex_plot_maker_final.py (grouped-color bars + robust TSV export + CLI defaults + a11y)
-
-Generate a standalone interactive HTML from a CSV/TSV using Plotly.js.
-- Dynamic axis selection (X/Y), plot type (bar/scatter), color by a column
-- Dropdown filters, search boxes, primary/secondary sorting (bar)
-- Dedupe policy (none/first/max/mean) per (X, Color)
-- Details-on-click table + TSV export
-- --top for server-side truncation
-- --self-contained with optional --plotly-file to embed Plotly offline
-- Accessibility-friendly HTML: <html lang>, <meta viewport>, <title>, labeled selects
-- CLI defaults (--default-*) and JSON defaults via --defaults-file
-- UI toggle for Show legend + UI numeric input for Zoom level (bars)
-"""
-
-import json
-import os
-import sys
-import argparse
-import re
-import pandas as pd
-from typing import List, Optional
-
-PLOTLY_JS_CDN = "https://cdn.plot.ly/plotly-2.30.0.min.js"
-PLOTLY_JS_INLINE_PLACEHOLDER = "/* Insert the contents of plotly-2.30.0.min.js here for offline use */"
-
-# ---------------------
-# Helpers
-# ---------------------
-
-def infer_sep(path: str) -> Optional[str]:
-    low = path.lower()
-    if low.endswith('.tsv') or low.endswith('.tab'):
-        return '\t'
-    if low.endswith('.csv'):
-        return ','
-    return None
-
-def read_table(path: str, sep: Optional[str] = None, encoding: str = 'utf-8') -> pd.DataFrame:
-    if sep is None:
-        sep = infer_sep(path)
-    if sep is None:
-        try:
-            return pd.read_csv(path, sep='\t', encoding=encoding)
-        except Exception:
-            return pd.read_csv(path, sep=',', encoding=encoding)
-    return pd.read_csv(path, sep=sep, encoding=encoding)
-
-def parse_range(s: Optional[str]) -> Optional[List[float]]:
-    if not s:
-        return None
-    s = s.strip()
-    s = re.sub(r'[\[\]\s]', '', s)
-    parts = s.split(',')
-    if len(parts) != 2:
-        return None
-    try:
-        return [float(parts[0]), float(parts[1])]
-    except Exception:
-        return None
-
-def auto_columns(df: pd.DataFrame) -> dict:
-    """Auto-suggest x/y/dropdown columns if user omits CLI lists."""
-    numeric_cols = [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]
-    non_numeric_cols = [c for c in df.columns if c not in numeric_cols]
-    dropdowns = []
-    for c in non_numeric_cols:
-        nunq = df[c].nunique(dropna=True)
-        if 1 < nunq <= 50:
-            dropdowns.append(c)
-    return {'x': non_numeric_cols, 'y': numeric_cols, 'dropdowns': dropdowns}
-
-def build_payload(df: pd.DataFrame,
-                  plot_type: str,
-                  x_cols: List[str],
-                  y_cols: List[str],
-                  color_col: Optional[str],
-                  dropdown_cols: List[str],
-                  search_cols: List[str],
-                  detail_cols: List[str],
-                  sort_cols: List[str],
-                  initial_zoom: Optional[int],
-                  initial_x_range: Optional[List[float]],
-                  initial_y_range: Optional[List[float]],
-                  title: Optional[str],
-                  dedupe_policy: Optional[str]) -> dict:
-    return {
-        'rows': df.to_dict(orient='records'),
-        'columns': list(df.columns),
-        'plotType': plot_type,
-        'xOptions': x_cols or [],
-        'yOptions': y_cols or [],
-        'colorCol': color_col,
-        'dropdownCols': dropdown_cols or [],
-        'searchCols': search_cols or [],
-        'detailCols': detail_cols or [],
-        'sortCols': sort_cols or [],
-        'initialZoom': int(initial_zoom) if initial_zoom else None,
-        'initialXRange': initial_x_range,
-        'initialYRange': initial_y_range,
-        'title': title or '',
-        'dedupePolicy': dedupe_policy or 'none',
-    }
-
-# ---------------------
-# HTML template (token replacement)
-# ---------------------
-HTML_TEMPLATE = r"""
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>__TITLE__</title>
-  <style>
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; margin: 12px; }
-    #controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 8px; align-items: end; }
-    .ctrl { display: flex; flex-direction: column; }
-    .ctrl label { font-weight: 600; margin-bottom: 4px; }
-    .row { margin-top: 12px; }
-    #plot { width: 100%; height: 720px; }
-    #details { font-size: 13px; color: #333; margin-top: 10px; }
-    table.details-table th { text-align: left; padding: 4px 8px; background: #f7f7f7; }
-    table.details-table td { padding: 4px 8px; }
-  </style>
-  __PLOTLY_SCRIPT__
-</head>
-<body>
-  <h2 id="pageTitle"></h2>
-
-  <div id="controls" aria-label="Plot controls">
-    <div class="ctrl">
-      <label for="plotType">Plot type</label>
-      <select id="plotType" aria-label="Plot type">
-        <option value="bar">Bar</option>
-        <option value="scatter">Scatter</option>
-      </select>
-    </div>
-    <div class="ctrl">
-      <label for="xCol">X axis</label>
-      <select id="xCol" aria-label="X axis"></select>
-    </div>
-    <div class="ctrl">
-      <label for="yCol">Y axis</label>
-      <select id="yCol" aria-label="Y axis"></select>
-    </div>
-    <div class="ctrl">
-      <label for="colorCol">Color by</label>
-      <select id="colorCol" aria-label="Color by"></select>
-    </div>
-
-    <!-- Accessible Sort 1 (field + direction) -->
-    <div class="ctrl">
-      <label for="sort1">Sort 1 (X categories)</label>
-      <div style="display:flex; gap:6px; align-items:end;">
-        <div class="ctrl" style="min-width:0;">
-          <label for="sort1">Field</label>
-          <select id="sort1" aria-label="Sort 1 field"></select>
-        </div>
-        <div class="ctrl" style="min-width:0;">
-          <label for="sort1Dir">Direction</label>
-          <select id="sort1Dir" aria-label="Sort 1 direction">
-            <option value="asc">Asc</option>
-            <option value="desc">Desc</option>
-          </select>
-        </div>
-      </div>
-    </div>
-
-    <!-- Accessible Sort 2 (field + direction) -->
-    <div class="ctrl">
-      <label for="sort2">Sort 2 (tie-break)</label>
-      <div style="display:flex; gap:6px; align-items:end;">
-        <div class="ctrl" style="min-width:0;">
-          <label for="sort2">Field</label>
-          <select id="sort2" aria-label="Sort 2 field"></select>
-        </div>
-        <div class="ctrl" style="min-width:0;">
-          <label for="sort2Dir">Direction</label>
-          <select id="sort2Dir" aria-label="Sort 2 direction">
-            <option value="asc">Asc</option>
-            <option value="desc">Desc</option>
-          </select>
-        </div>
-      </div>
-    </div>
-
-    <!-- Legend toggle + Zoom level -->
-    <div class="ctrl">
-      <label for="showLegend">Show legend</label>
-      <input type="checkbox" id="showLegend" aria-label="Show legend" />
-    </div>
-    <div class="ctrl">
-      <label for="zoomLevel">Zoom level (bars)</label>
-      <input type="number" id="zoomLevel" min="1" step="1" aria-label="Zoom level" />
-    </div>
-
-    <div class="ctrl">
-      <label>&nbsp;</label>
-      <div style="display:flex; gap:8px;">
-        <button id="resetBtn" type="button">Reset filters</button>
-        <button id="exportBtn" type="button">Export TSV</button>
-      </div>
-    </div>
-  </div>
-
-  <div id="filterRows" class="row"></div>
-
-  <div id="plot"></div>
-  <div id="details">Click a point/bar to see details here.</div>
-
-  <script type="application/json" id="__payload__">__PAYLOAD_JSON__</script>
-  <script>
-  (function(){
-    function isNumeric(x){ return typeof x === 'number' && Number.isFinite(x); }
-    function toNum(v){ if (typeof v === 'number') return v; if (v == null) return NaN; var s = String(v).replace(',', '.').trim(); var n = parseFloat(s); return Number.isNaN(n) ? NaN : n; }
-    function uniq(arr){ return Array.from(new Set(arr.map(v => String(v)))); }
-    function cmpAsc(a,b){ if (a==null && b==null) return 0; if (a==null) return 1; if (b==null) return -1; if (typeof a === 'number' && typeof b === 'number') return a-b; return String(a).localeCompare(String(b)); }
-    function cmpDesc(a,b){ return -cmpAsc(a,b); }
-
-    var P = JSON.parse(document.getElementById('__payload__').textContent || '{}');
-    var D = P.defaults || {};
-
-    var plotEl = document.getElementById('plot');
-    var titleEl = document.getElementById('pageTitle');
-    titleEl.textContent = P.title || 'Interactive Plot';
-
-    // Controls
-    var selPlotType = document.getElementById('plotType');
-    var selX = document.getElementById('xCol');
-    var selY = document.getElementById('yCol');
-    var selColor = document.getElementById('colorCol');
-    var selSort1 = document.getElementById('sort1');
-    var selSort2 = document.getElementById('sort2');
-    var selSort1Dir = document.getElementById('sort1Dir');
-    var selSort2Dir = document.getElementById('sort2Dir');
-    var chkLegend = document.getElementById('showLegend');
-    var inpZoom = document.getElementById('zoomLevel');
-    var resetBtn = document.getElementById('resetBtn');
-    var exportBtn = document.getElementById('exportBtn');
-    var filterRowsEl = document.getElementById('filterRows');
-    var detailsEl = document.getElementById('details');
-
-    function setOptions(selectEl, options, selected){
-      selectEl.innerHTML = '';
-      options.forEach(function(opt){
-        var o = document.createElement('option');
-        o.value = opt; o.textContent = opt; selectEl.appendChild(o);
-      });
-      if (selected && options.includes(selected)) selectEl.value = selected; else if (options.length>0) selectEl.value = options[0];
-    }
-
-    // Apply defaults (D.*) with fallback to payload
-    setOptions(selPlotType, ['bar','scatter'], D.plotType || (P.plotType || 'bar'));
-    setOptions(selX, P.xOptions || [], D.xCol || (P.xOptions||[])[0]);
-    setOptions(selY, P.yOptions || [], D.yCol || (P.yOptions||[])[0]);
-    setOptions(selColor, P.colorCol ? [P.colorCol] : [''], D.colorCol || (P.colorCol || ''));
-    setOptions(selSort1, P.sortCols || [], D.sort1 || (P.sortCols||[])[0]);
-    setOptions(selSort2, P.sortCols || [], D.sort2 || (P.sortCols||[])[1] || '');
-    selSort1Dir.value = D.sort1Dir || 'asc';
-    selSort2Dir.value = D.sort2Dir || 'asc';
-
-    // Legend + Zoom defaults
-    chkLegend.checked = (D.showLegend !== undefined ? !!D.showLegend : true);
-    var initZoom = (typeof D.zoomLevel === 'number') ? D.zoomLevel : (P.initialZoom || null);
-    inpZoom.value = (initZoom !== null ? initZoom : '');
-
-    // Build dropdown filters & search inputs
-    filterRowsEl.innerHTML = '';
-    var dropdownSelectors = {};
-    var searchInputs = {};
-
-    (P.dropdownCols || []).forEach(function(col){
-      var values = uniq((P.rows||[]).map(r => r[col]).filter(v => v != null));
-      values.sort((a,b)=>String(a).localeCompare(String(b)));
-      var div = document.createElement('div'); div.className = 'ctrl';
-      var label = document.createElement('label'); label.textContent = col + ' (filter)';
-      var select = document.createElement('select'); select.id = 'dd_'+col; select.setAttribute('aria-label', col + ' filter');
-      var allOpt = document.createElement('option'); allOpt.value='__ALL__'; allOpt.textContent='All'; select.appendChild(allOpt);
-      values.forEach(function(v){ var o = document.createElement('option'); o.value = String(v); o.textContent = String(v); select.appendChild(o); });
-      div.appendChild(label); div.appendChild(select);
-      filterRowsEl.appendChild(div);
-      dropdownSelectors[col] = select;
-    });
-
-    (P.searchCols || []).forEach(function(col){
-      var div = document.createElement('div'); div.className = 'ctrl';
-      var label = document.createElement('label'); label.textContent = col + ' (search)';
-      var input = document.createElement('input'); input.type='text'; input.placeholder = 'Type to filter '+col+'...'; input.id = 'q_'+col; input.setAttribute('aria-label', col + ' search');
-      div.appendChild(label); div.appendChild(input);
-      filterRowsEl.appendChild(div);
-      searchInputs[col] = input;
-    });
-
-    // Apply default dropdown selections
-    if (D.filters && typeof D.filters === 'object'){
-      Object.keys(D.filters).forEach(function(col){
-        var sel = document.getElementById('dd_'+col);
-        if (sel){
-          var target = String(D.filters[col]);
-          var found = false;
-          Array.from(sel.options).forEach(function(opt){ if (String(opt.value) === target) found = true; });
-          if (found) sel.value = target; // else keep All
-        }
-      });
-    }
-
-    // Apply default search terms
-    if (D.search && typeof D.search === 'object'){
-      Object.keys(D.search).forEach(function(col){
-        var inp = document.getElementById('q_'+col);
-        if (inp) inp.value = String(D.search[col] || '');
-      });
-    }
-
-    var SAFE = ['#636EFA','#EF553B','#00CC96','#AB63FA','#FFA15A','#19D3F3','#FF6692','#B6E880','#FF97FF','#FECB52'];
-    function colorMapFor(column, rows){
-      if (!column) return {};
-      var keys = uniq(rows.map(r => r[column]).filter(v => v != null));
-      var cmap = {}; keys.forEach(function(k, i){ cmap[String(k)] = SAFE[i % SAFE.length]; });
-      return cmap;
-    }
-
-    function filterRows(){
-      var rows = (P.rows || []).slice();
-      // Dropdown filters
-      Object.keys(dropdownSelectors).forEach(function(col){
-        var sel = dropdownSelectors[col]; var val = sel.value;
-        if (val && val !== '__ALL__'){
-          rows = rows.filter(r => String(r[col]) === val);
-        }
-      });
-      // Search text filters
-      Object.keys(searchInputs).forEach(function(col){
-        var term = (searchInputs[col].value || '').toLowerCase().trim();
-        if (term){
-          rows = rows.filter(r => String(r[col] || '').toLowerCase().indexOf(term) !== -1);
-        }
-      });
-      return rows;
-    }
-
-    // Dedupe per (X, Color)
-    function dedupe(rows, xCol, yCol){
-      var policy = String(P.dedupePolicy || 'none');
-      if (policy === 'none' || !xCol || !yCol) return rows;
-      var cCol = selColor.value || null;
-      var groups = {};
-      rows.forEach(function(r){
-        var key = String(r[xCol]) + '||' + (cCol ? String(r[cCol]) : '');
-        if (!groups[key]) groups[key] = [];
-        groups[key].push(r);
-      });
-      var out = [];
-      Object.keys(groups).forEach(function(g){
-        var arr = groups[g];
-        if (!arr.length) return;
-        if (policy === 'first') { out.push(arr[0]); return; }
-        var yVals = arr.map(a => toNum(a[yCol])).filter(v => !Number.isNaN(v));
-        var val = yVals.length ? yVals[0] : NaN;
-        if (policy === 'max') val = Math.max.apply(null, yVals);
-        else if (policy === 'mean') val = yVals.reduce((s,v)=>s+v,0) / (yVals.length || 1);
-        var base = arr[0]; var merged = Object.assign({}, base); merged[yCol] = val; out.push(merged);
-      });
-      return out;
-    }
-
-    function render(){
-      var plotType = selPlotType.value || 'bar';
-      var xCol = selX.value; var yCol = selY.value;
-      var rows = filterRows();
-      rows = dedupe(rows, xCol, yCol);
-      var dcols = P.detailCols || [];
-
-      // Sorting for bar categories (primary/secondary)
-      var sort1 = selSort1.value || null;
-      var sort2 = selSort2.value || null;
-      var s1dir = selSort1Dir.value || 'asc';
-      var s2dir = selSort2Dir.value || 'asc';
-      var cmp1 = (s1dir === 'desc') ? cmpDesc : cmpAsc;
-      var cmp2 = (s2dir === 'desc') ? cmpDesc : cmpAsc;
-
-      if (plotType === 'bar'){
-        rows.sort(function(a, b){
-          var A1 = a[sort1]; var B1 = b[sort1];
-          var c = cmp1(isNumeric(A1)?A1:toNum(A1), isNumeric(B1)?B1:toNum(B1));
-          if (c !== 0 || !sort2) return c;
-          var A2 = a[sort2]; var B2 = b[sort2];
-          return cmp2(isNumeric(A2)?A2:toNum(A2), isNumeric(B2)?B2:toNum(B2));
-        });
-      }
-
-      var layout = {
-        title: P.title || (yCol + ' by ' + xCol),
-        template: 'plotly_white',
-        hovermode: 'closest',
-        margin: {l:80, r:40, t:70, b:130},
-        dragmode: 'select',
-        showlegend: chkLegend.checked
-      };
-
-      function hoverTemplate(){
-        var lines = [];
-        if (plotType === 'bar'){ lines.push('**%{x}**'); lines.push('Value: %{y:.4g}'); }
-        else { lines.push('**X=%{x:.4g}**'); lines.push('Y=%{y:.4g}'); }
-        dcols.forEach(function(c, i){ lines.push(c + ': %{customdata['+i+']}'); });
-        return lines.join('<br>') + '<extra></extra>';
-      }
-
-      var traces = [];
-
-      if (plotType === 'bar'){
-        var colorCol = selColor.value || null;
-        if (colorCol){
-          // One trace per color category -> grouped bars (prevents overlapping)
-          var cmap = colorMapFor(colorCol, rows);
-          var keys = uniq(rows.map(r => r[colorCol]).filter(v => v != null));
-          keys.forEach(function(k){
-            var x = [], y = [], cd = [];
-            rows.filter(r => String(r[colorCol]) === String(k)).forEach(function(r){
-              x.push(r[xCol]);
-              y.push(toNum(r[yCol]));
-              cd.push(dcols.map(function(dc){ return r[dc]; }));
-            });
-            traces.push({
-              type: 'bar',
-              name: String(k),
-              x: x,
-              y: y,
-              marker: { color: cmap[String(k)] || '#636EFA' },
-              customdata: cd,
-              hovertemplate: hoverTemplate()
-            });
-          });
-          layout.barmode = 'group';  // key fix to avoid stacking/overlay
-          layout.xaxis = { title: { text: xCol }, tickangle: -45 };
-          layout.yaxis = { title: { text: yCol }, automargin: true };
-        } else {
-          // Single-trace bar (no color grouping)
-          var x = [], y = [], cd = [];
-          rows.forEach(function(r){
-            x.push(r[xCol]);
-            y.push(toNum(r[yCol]));
-            cd.push(dcols.map(function(dc){ return r[dc]; }));
-          });
-          traces.push({
-            type: 'bar',
-            x: x,
-            y: y,
-            marker: { color: '#636EFA' },
-            customdata: cd,
-            hovertemplate: hoverTemplate()
-          });
-          layout.barmode = 'group'; // safe default
-          layout.xaxis = { title: { text: xCol }, tickangle: -45 };
-          layout.yaxis = { title: { text: yCol }, automargin: true };
-        }
-
-        // Initial zoom: use UI value if present, else fallback to initZoom
-        var z = parseInt(inpZoom.value);
-        var zoomBars = (!isNaN(z) && z > 0) ? z : initZoom;
-        if (zoomBars){
-          layout.xaxis.range = [ -0.5, zoomBars - 0.5 ];
-        }
-      } else {
-        // Scatter (single trace)
-        var xs = [], ys = [], colors = [], customdata = [];
-        var cmap = colorMapFor(selColor.value, rows);
-        rows.forEach(function(r){
-          xs.push(toNum(r[xCol]));
-          ys.push(toNum(r[yCol]));
-          var colKey = selColor.value ? String(r[selColor.value]) : '';
-          colors.push((cmap && cmap[colKey]) || '#636EFA');
-          customdata.push(dcols.map(function(dc){ return r[dc]; }));
-        });
-        traces.push({
-          type: 'scatter',
-          mode: 'markers',
-          x: xs,
-          y: ys,
-          marker: { color: colors, size: 8, opacity: 0.9 },
-          customdata: customdata,
-          hovertemplate: hoverTemplate()
-        });
-        layout.xaxis = { title: { text: xCol }, automargin: true };
-        layout.yaxis = { title: { text: yCol }, automargin: true };
-        if (Array.isArray(P.initialXRange) && P.initialXRange.length===2){ layout.xaxis.range = P.initialXRange; }
-        if (Array.isArray(P.initialYRange) && P.initialYRange.length===2){ layout.yaxis.range = P.initialYRange; }
-      }
-
-      Plotly.react(plotEl, traces, layout);
-    }
-
-    // Legend + Zoom interactions
-    chkLegend.addEventListener('change', function(){
-      Plotly.relayout(plotEl, { showlegend: chkLegend.checked });
-    });
-    inpZoom.addEventListener('input', function(){
-      var val = parseInt(inpZoom.value);
-      if (!isNaN(val) && val > 0 && selPlotType.value === 'bar'){
-        Plotly.relayout(plotEl, { 'xaxis.range': [-0.5, val - 0.5] });
-      }
-    });
-
-    // Bind events
-    selPlotType.addEventListener('change', render);
-    selX.addEventListener('change', render);
-    selY.addEventListener('change', render);
-    selColor.addEventListener('change', render);
-    selSort1.addEventListener('change', render);
-    selSort2.addEventListener('change', render);
-    selSort1Dir.addEventListener('change', render);
-    selSort2Dir.addEventListener('change', render);
-
-    function attachFilterListeners(){
-      Object.values(dropdownSelectors).forEach(function(el){ el.addEventListener('change', render); });
-      Object.values(searchInputs).forEach(function(el){ el.addEventListener('input', render); });
-    }
-
-    attachFilterListeners();
-
-    resetBtn.addEventListener('click', function(){
-      Object.values(dropdownSelectors).forEach(function(el){ el.value='__ALL__'; });
-      Object.values(searchInputs).forEach(function(el){ el.value=''; });
-      setOptions(selX, P.xOptions || [], (P.xOptions||[])[0]);
-      setOptions(selY, P.yOptions || [], (P.yOptions||[])[0]);
-      setOptions(selSort1, P.sortCols || [], (P.sortCols||[])[0]);
-      setOptions(selSort2, P.sortCols || [], (P.sortCols||[])[1] || '');
-      selSort1Dir.value = 'asc'; selSort2Dir.value = 'asc';
-      selPlotType.value = P.plotType || 'bar';
-      // Reset legend + zoom to defaults
-      chkLegend.checked = (D.showLegend !== undefined ? !!D.showLegend : true);
-      inpZoom.value = (typeof D.zoomLevel === 'number' ? D.zoomLevel : (P.initialZoom || ''));
-      render();
-    });
-
-    // Robust TSV export: filtered + deduped rows
-    exportBtn.addEventListener('click', function(){
-      var xCol = selX.value; var yCol = selY.value;
-      var rows = dedupe(filterRows(), xCol, yCol);
-      var cols = (P.detailCols && P.detailCols.length) ? P.detailCols.slice() : (P.columns || []);
-      var header = cols.join('\t');
-      var lines = rows.map(function(r){
-        return cols.map(function(c){ return (r[c] != null ? String(r[c]) : ''); }).join('\t');
-      });
-      var tsv = [header].concat(lines).join('\n');
-
-      try {
-        var blob = new Blob([tsv], { type: 'text/tab-separated-values;charset=utf-8' });
-        var a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = 'export.tsv';
-        document.body.appendChild(a);
-        a.click();
-        setTimeout(function(){
-          URL.revokeObjectURL(a.href);
-          document.body.removeChild(a);
-        }, 200);
-      } catch (e) {
-        console.warn('Export failed:', e);
-      }
-    });
-
-    // Initial render
-    render();
-  })();
-  </script>
-</body>
-</html>
-"""
-
-def save_html(out_path: str, payload: dict, title: Optional[str], self_contained: bool, plotly_file: Optional[str]):
-    if self_contained:
-        js_code = None
-        if plotly_file:
-            try:
-                with open(plotly_file, 'r', encoding='utf-8') as f:
-                    js_code = f.read()
-            except Exception:
-                js_code = None
-        if js_code is None:
-            js_code = PLOTLY_JS_INLINE_PLACEHOLDER
-        safe_js_code = js_code.replace('</script', '<\\/script')
-        plotly_script = "<script>\n" + safe_js_code + "\n</script>"
-    else:
-        plotly_script = '<script src="' + PLOTLY_JS_CDN + '"></script>'
-
-    payload_json = json.dumps(payload, ensure_ascii=False).replace('</script', '<\\/script')
-
-    html = (HTML_TEMPLATE
-            .replace('__TITLE__', title or (payload.get('title') or 'Interactive Plot'))
-            .replace('__PLOTLY_SCRIPT__', plotly_script)
-            .replace('__PAYLOAD_JSON__', payload_json))
-
-    with open(out_path, 'w', encoding='utf-8') as f:
-        f.write(html)
-
-def main():
-    ap = argparse.ArgumentParser(description='Flexible interactive plot maker (CSV/TSV -> HTML).')
-    ap.add_argument('--file', '-f', required=True, help='Input table (.tsv/.csv)')
-    ap.add_argument('--out', '-o', default='interactive_plot.html', help='Output HTML file')
-    ap.add_argument('--sep', default=None, help='Field separator (auto by extension if omitted)')
-    ap.add_argument('--encoding', default='utf-8', help='File encoding')
-
-    ap.add_argument('--plot-type', choices=['bar','scatter'], default='bar', help='Initial plot type')
-    ap.add_argument('--x-cols', nargs='+', default=[], help='Columns allowed for X-axis selection')
-    ap.add_argument('--y-cols', nargs='+', default=[], help='Columns allowed for Y-axis selection')
-    ap.add_argument('--color-col', default=None, help='Column to color points/bars by (categorical)')
-    ap.add_argument('--dropdown-cols', nargs='+', default=[], help='Columns to create dropdown filters for')
-    ap.add_argument('--search-cols', nargs='+', default=[], help='Columns to create search boxes for')
-    ap.add_argument('--detail-cols', nargs='+', default=[], help='Columns to show in hover/details and TSV export')
-    ap.add_argument('--sort-cols', nargs='+', default=[], help='Columns to sort X categories (primary/secondary)')
-
-    ap.add_argument('--initial-zoom', type=int, default=None, help='Initial number of bars shown (bar only)')
-    ap.add_argument('--initial-x-range', default=None, help='Initial X range for scatter, "a,b"')
-    ap.add_argument('--initial-y-range', default=None, help='Initial Y range for scatter, "a,b"')
-    ap.add_argument('--title', default=None, help='Page/plot title')
-    ap.add_argument('--dedupe-policy', choices=['none','first','max','mean'], default='none', help='Collapse duplicates per (X,Color) before plotting')
-
-    ap.add_argument('--self-contained', action='store_true', help='Embed Plotly.js inline for offline HTML')
-    ap.add_argument('--plotly-file', default=None, help='Path to local plotly.min.js to embed when --self-contained')
-    ap.add_argument('--top', type=int, default=None, help='Truncate to top N rows before embedding (sorted by first --sort-cols if provided)')
-
-    ap.add_argument('--auto-populate', action='store_true', help='Auto-fill X/Y/dropdown options from data if CLI lists are empty')
-
-    # CLI defaults (existing)
-    ap.add_argument('--default-plot-type', choices=['bar','scatter'], help='Default plot type')
-    ap.add_argument('--default-x', help='Default X-axis column')
-    ap.add_argument('--default-y', help='Default Y-axis column')
-    ap.add_argument('--default-color', help='Default color-by column')
-    ap.add_argument('--default-sort1', help='Default primary sort column')
-    ap.add_argument('--default-sort2', help='Default secondary sort column (tie-break)')
-    ap.add_argument('--default-sort1-dir', choices=['asc','desc'], help='Default primary sort direction')
-    ap.add_argument('--default-sort2-dir', choices=['asc','desc'], help='Default secondary sort direction')
-    ap.add_argument('--default-filters', help='JSON mapping {"Column":"Value", ...} for dropdown defaults')
-    ap.add_argument('--default-search', help='JSON mapping {"Column":"term", ...} for search defaults')
-
-    # NEW CLI defaults for legend + zoom
-    ap.add_argument('--default-show-legend', choices=['true','false'], help='Default for show legend (true/false)')
-    ap.add_argument('--default-zoom-level', type=int, help='Default zoom level for bars')
-
-    # Optional: JSON defaults file
-    ap.add_argument('--defaults-file', help='Path to JSON file with default selections (same keys as --default-*)')
-
-    args = ap.parse_args()
-
-    df = read_table(args.file, sep=args.sep, encoding=args.encoding)
-
-    # Validate requested columns exist (if provided)
-    missing = []
-    for lst in [args.x_cols, args.y_cols, args.dropdown_cols, args.search_cols, args.detail_cols, args.sort_cols]:
-        for c in lst:
-            if c and c not in df.columns:
-                missing.append(c)
-    if args.color_col and args.color_col not in df.columns:
-        missing.append(args.color_col)
-    if missing:
-        sys.stderr.write('[ERROR] Missing columns in input: ' + ', '.join(missing) + '\n')
-        sys.exit(1)
-
-    # Auto-populate menus if requested and lists are empty
-    if args.auto_populate:
-        auto = auto_columns(df)
-        if not args.x_cols:
-            args.x_cols = auto['x']
-        if not args.y_cols:
-            args.y_cols = auto['y']
-        if not args.dropdown_cols:
-            args.dropdown_cols = auto['dropdowns']
-
-    # Top-N truncation
-    if args.top:
-        if args.sort_cols and args.sort_cols[0] in df.columns:
-            df = df.sort_values(by=args.sort_cols[0], ascending=False).head(args.top)
-        else:
-            df = df.head(args.top)
-
-    payload = build_payload(
-        df=df,
-        plot_type=args.plot_type,
-        x_cols=args.x_cols,
-        y_cols=args.y_cols,
-        color_col=args.color_col,
-        dropdown_cols=args.dropdown_cols,
-        search_cols=args.search_cols,
-        detail_cols=args.detail_cols,
-        sort_cols=args.sort_cols,
-        initial_zoom=args.initial_zoom,
-        initial_x_range=parse_range(args.initial_x_range),
-        initial_y_range=parse_range(args.initial_y_range),
-        title=args.title,
-        dedupe_policy=args.dedupe_policy,
-    )
-
-    # JSON parsers
-    def parse_json_or_none(s):
-        if not s:
-            return None
-        try:
-            return json.loads(s)
-        except Exception:
-            return None
-
-    def parse_bool_choice(s):
-        if s is None:
-            return None
-        return str(s).lower() == 'true'
-
-    # Load defaults from file if provided
-    file_defaults = {}
-    if args.defaults_file:
-        try:
-            with open(args.defaults_file, 'r', encoding='utf-8') as f:
-                file_defaults = json.load(f)
-        except Exception as e:
-            sys.stderr.write('[WARN] Could not read defaults file: ' + str(e) + '\n')
-            file_defaults = {}
-
-    # Merge CLI defaults (CLI has priority over file)
-    defaults = dict(file_defaults)
-    if args.default_plot_type is not None:
-        defaults['plotType'] = args.default_plot_type
-    if args.default_x is not None:
-        defaults['xCol'] = args.default_x
-    if args.default_y is not None:
-        defaults['yCol'] = args.default_y
-    if args.default_color is not None:
-        defaults['colorCol'] = args.default_color
-    if args.default_sort1 is not None:
-        defaults['sort1'] = args.default_sort1
-    if args.default_sort2 is not None:
-        defaults['sort2'] = args.default_sort2
-    if args.default_sort1_dir is not None:
-        defaults['sort1Dir'] = args.default_sort1_dir
-    if args.default_sort2_dir is not None:
-        defaults['sort2Dir'] = args.default_sort2_dir
-
-    cli_filters = parse_json_or_none(args.default_filters)
-    cli_search = parse_json_or_none(args.default_search)
-    if cli_filters is not None:
-        defaults['filters'] = cli_filters
-    if cli_search is not None:
-        defaults['search'] = cli_search
-
-    # New defaults: legend + zoom
-    if args.default_show_legend is not None:
-        defaults['showLegend'] = parse_bool_choice(args.default_show_legend)
-    if args.default_zoom_level is not None:
-        defaults['zoomLevel'] = int(args.default_zoom_level)
-
-    # Attach defaults if any key present
-    if defaults:
-        payload['defaults'] = defaults
-
-    save_html(args.out, payload, title=args.title or 'Interactive Plot', self_contained=args.self_contained, plotly_file=args.plotly_file)
-    print(f'Saved: {args.out}')
-
-if __name__ == '__main__':
-    main()
-
-
-```
-# run
-```
-python universal_plot_maker_plus.py \
-  --file top_10k_with_cluster_categories.tsv \
-  --out Celltype_Enrichment_V2_1_top_10k.html \
-  --plot-type bar \
-  --x-choices "Gene name | Gene" \
-  --y-choices "Enrichment score|log2_enrichment| specificity_tau | Enrichment score (tau penalized)|log2_enrichment_penalized" \
-  --default-x "Gene name" \
-  --default-y "log2_enrichment_penalized" \
-  --color-col "Cell type" \
-  --color-choices "Cell type|Cell type group|Cell type class" \
-  --filter-cols "Cell type class|Cell type group|Cell type|cluster_limit" \
-  --search-cols "Gene|Gene name" \
-  --details "Gene|Gene name|Cell type|Cell type group|Cell type class|clusters_used|Enrichment score|log2_enrichment| specificity_tau |log2_enrichment_penalized|top_percent_Cell_type_count|top_percent_Cell_type_group_count|top_percent_Cell_type_class_count|overall_rank_by_Cell_type|overall_rank_by_Cell_type_group|overall_rank_by_Cell_type_class|rank_within_Cell_type|rank_within_Cell_type_group|rank_within_Cell_type_class|top_percent_Cell_types|top_percent_Cell_type_groups|top_percent_Cell_type_classes" \
-  --title "Celltype Enrichmnt V 2.1" \
-  --dup-policy overlay \
-  --sort-primary "overall_rank_by_Cell_type" \
-  --sort-primary-order asc \
-  --sort-secondary "log2_enrichment_penalized" \
-  --sort-secondary-order desc \
-  --initial-zoom 100 \
-  --self-contained \
-  --lang en
-```
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# 8-I Introduction
-
-and Finally I plotted it with universal plot maker
-
-# 8-II universal plot maker script
-```url
-https://github.com/TharinduTS/Different_ways_to_measure_cell_specific_expression/blob/main/README.md#universal-interactive-plot-maker
-```
-# 8-III universal plot maker Runner
-With following runner
-
-run_universal_plot_maker_with_options.sh
-```bash
-#!/usr/bin/env bash
-# Usage:
-#   ./run_universal_plot_maker_with_options.sh [overrides...]
-# Example:
-#   ./run_universal_plot_maker_with_options.sh --file simple_enrich_1_clustor.tsv --out simple_enrich_1_clustor_plot.html
-
-set -euo pipefail
-
-# Resolve the directory of this script so we can find the Python file reliably
-script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-
-# Default arguments (can be overridden by CLI options appended below)
-args=(
-  --file ranked_genes.tsv          # REQUIRED: Input data file (TSV/CSV/etc.)
-  --out ranked_specific_global.html                      # Output HTML file name
-  # --top 35000                                       # Top N rows to plot (default: 100)
-  --dedupe-policy mean                             # [max|mean|median|first] aggregation
-  # --log                                            # Use log scale on numeric axis
-  --linear                                       # Use linear scale instead (mutually exclusive with --log)
-  # --horizontal                                   # Horizontal bars (better for long labels)
-  --self-contained                                 # Embed Plotly.js for offline HTML
-  # --log-digits D2                                # Log-axis minor ticks: D1 (all) or D2 (2 & 5)
-  # --lang en-CA                                   # HTML lang attribute (default: en)
-  --initial-zoom 100                               # Initial number of bars visible on load
-  # --sep $'\t'                                    # Field separator (auto-detected if omitted)
-  --x-col "Gene name"                              # Column for X axis (numeric if horizontal)
-  --y-col "log2_enrichment_penalized"                       # Column for Y axis (categorical if horizontal)
-  --label-col "Gene name"                               # Explicit label column (optional)
-  # --value-col Score                              # Explicit numeric value column (optional)
-  --group-col "Cell type"                          # Column for color grouping (legend)
-  --search-col "Gene name"                         # Column used for search box
-  --details "Gene" "Gene name" "Cell type" "avg_nCPM" "specificity_tau" "log2_enrichment_penalized" "top_percent_celltype_count" "top_percent_celltypes" "rank_within_celltype" "overall_rank" # Extra columns
-)
-
-# Append any CLI overrides so the LAST occurrence of options wins
-args+=( "$@" )
-
-# Invoke the Python script with the collected arguments
-python3 "${script_dir}/universal_plot_maker.py" "${args[@]}"
-```
-# 8-IV Run command
-
-run it like
-```bash
-./run_universal_plot_maker_with_options.sh --file selected_ranked_genes.tsv --top 35000 --out selected_ranked_genes.html
-```
+# 9-II Plot behavior 
+1	Plot Type – This allows you to select the plot time you want to visualize data in. At the moment, I am only using bar plots as they make most sense for this type of data
+
+2	Color by – This allows you to select which column you want to color your data by. Eg: Cell type gives different colors to different cell types/ Cell type group color bars by the cell type group
+
+3	X – This allows you to select what you want in the X axis. I only gave the options of Gene name and Gene
+
+4	Y- This determines what you see on Y axis
+
+5	Bars to show – This determines how zoomed in/ how many bars you can see in the window. This is specially helpful in exporting a certain number of rows with ‘Export TSV’ button
+
+6	Duplicate policy- This allows you to select how the plot deals with duplicates (Eg: when same Gene is expressed in more than one cell type, how you want them to be visualized. I have explained some use cases below.
+
+7	Primary sort – This lets you select which order you want to sort data by. You have many options with different columns like overall rank by cell type, tau specificity score, gene name etc.
+
+8	Secondary sort- This is used as a tie breaker. When primary sort has the same value for two or more rows, you can use this to decide the sort order.
+
+9	Asc and desc menus- For each sort menus, you can select whether they should be sorted in ascending or descending order. If the column is numeric, these sorts based on value. If the column is string, then it is A-Z or Z-A
+
+
+
+# 9-III Filter Menus
+
+1	Cell type class- Lets you filter data by cell type class
+
+2	Cell type group - Lets you filter data by cell type group
+
+3	Cell type - Lets you filter data by cell type
+
+4	Cluster limit – Lets you filter data based on how many clusters were used for the calculation. For now it lets you select all, one cluster or below and 2 clusters or above.
+
+# 9-IV Search Bars
+
+1	Search in Gene – Lets you search genes by gene ID 
+
+2	Search in Gene name – Lets you search genes by gene name
+
+# 9-V Buttons
+
+1	Reset – Resets the plot to original values
+
+2	Export TSV – Exports currently selected data as a TSV file
+
+# 9- VI Information shown
+
+1	Gene – Gene ID
+
+2	Gene name – General name of the gene
+
+3	Cell type - Cell type of currently selected data point/ bar
+
+4	Cell type group - Cell type group of currently selected data point/ bar 
+
+5	Cell type class - Cell type class of currently selected data point/ bar
+
+6	clusters_used – Number of clusters used for currently selected bar/ gene* cell type combination
+
+7	Enrichment score – raw enrichment score
+
+8	log2_enrichment - log2_enrichment score. Good for centering around 0
+
+9	specificity_tau – Specificity score observed by Yanai’s T
+
+10	log2_enrichment_penalized - log2_enrichment score penalized by Yanai’s T
+
+11	top_percent_Cell_type_count – Number of cell types currently selected gene was found in- in the data selected in sections 4 and 6 ( in values more than 0, so it is enrichment/not depletion. And I did not consider lowest 5% of enrichment values in this as I explained In sections 4 and 5)
+
+12	top_percent_Cell_type_group_count - Number of cell type groups currently selected gene was found in- in the data selected in sections 4 and 6 (just like before)
+
+13	top_percent_Cell_type_class_count - Number of cell type classes currently selected gene was found in- in the data selected in sections 4 and 6
+
+14	overall_rank_by_Cell_type – This script ranks gene* cell type combinations (represented by bars in default setting) based on 2 measures, 
+
+•	Number of cell types (or groups or classes) a particular gene is found in (in selected data as explained in section 4 and 6 like before).
+
+•	Enrichment score – In genes that were expressed in a similar number of cell types (or groups or classes, based on sort/filter selection), these combinations are then ranked by enrichment score. 
+So basically, if a gene is  only expressed in one cell type, gene with a higher enrichment score is ranked 1 and the gene with lower enrichment score is ranked 2. Any genes that were expressed in more than one cell type comes after both of these genes. 
+
+15	overall_rank_by_Cell_type_group – rank the current selection got just like in overall_rank_by_Cell_type, but this time based on presence in different cell groups instead of different cell types
+
+16	overall_rank_by_Cell_type_class - rank the current selection got just like in overall_rank_by_Cell_type, but this time based on presence in different cell classes instead of different cell types
+
+17	rank_within_Cell_type – rank for current gene based on enrichment score within current celltype
+
+18	rank_within_Cell_type_group - rank for current gene within current cell type group. This does not punish a gene rank for being present in 2 cell types, if they belong to the same cell type group
+
+19	rank_within_Cell_type_class - rank for current gene within current cell type class. This does not punish a gene rank for being present in 2 cell types, if they belong to the same cell type class
+
+20	top_percent_Cell_types – cell types the current gene/s is expressed in (again in the selected data as explained before)
+
+21	top_percent_Cell_type_groups - cell type group/s the current gene is expressed in
+
+22	top_percent_Cell_type_classes - cell type class/es the current gene is expressed in
+
+# 9-VII Use cases
+
+## Visualizing
+
+By Default, CellType Enrichment V2.1 loads with Gene name as X axis and Log2 Enrichment value penalized by specificity score as Y axis. I think this is a good starting point as log2_enrichment puts background level expression level on 0 and it is easier to interpret. 
+With defaults set to overlay plots and Primary sort by overall rank by cell type. This plot puts genes that are only expressed in one cell type with highest enrichment score first. Then it plots gradually decreasing enrichment values: still for genes that are only expressed in one cell type (see figure below).
+
+<img width="974" height="300" alt="image" src="https://github.com/user-attachments/assets/a4fbd386-018f-44f9-ab23-8c03b36fff71" />
+Overall gene ranking
+
+If you keep scrolling right, then it starts plotting genes that are expressed in two cell types, but highly biased to one cell type. And then genes expressed in two cell types, with a lesser expression bias to one cell type and so on. Different colors represent different cell types here. Figure 4 below shows transition from genes that express in only one cell type to two cell types.
+
+<img width="974" height="370" alt="image" src="https://github.com/user-attachments/assets/c0f063bb-f2b6-491a-b964-997992ea985e" />
+Transition from genes expressed in one cell type to genes expressed in two cell types
+
+## Filtering
+
+Filtering Menus gives you the values sorted according to sort columns just like before, but for individual cell type class, cell type group and cell type (see following figure as an example)
+
+<img width="974" height="370" alt="image" src="https://github.com/user-attachments/assets/d235d090-079e-45be-8fc5-5ae16bf8c7c8" />
+Transition from genes expressed in one cell type to genes expressed in two cell types - filtered for cell type class blood and immune cells
+
+## Downloading
+
+This script gives you multiple ways to select and download data with ‘Export TSV’ button.
+
+Normal download
+
+On the normal view, you can just select and download data for any selection with the tools baked into the plot viewer.
+
+A specific number of data points.
+
+Entering a value in the box ‘Bars to show’ lets you select a specific number of data points in the current view and download that number of data points.
+
+Sorted data points and top values
+
+In addition to these, you can use sort and filter menus to select your download.
+
+As an example, if you want to download the top values for each cell type, you can set the Primary sort to ‘rank_within_celltype’. This brings all the no 1 ranked genes for each cell type to the top. 
+
+Then you can use secondary sort as ‘cell type’ 
+
+NOTE: This last part may need a little more work to get it working perfectly
+
+
+
+
+
+
+
 
