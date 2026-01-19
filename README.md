@@ -2190,7 +2190,7 @@ It had protein type data in the column 'Protein type' as the first comma seperat
 
 ## 8-II Extract essential data
 
-###Script
+### Script
 
 extract_regex.py
 ```py
