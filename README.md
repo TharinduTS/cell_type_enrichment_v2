@@ -2104,19 +2104,19 @@ python rank_genes.py \
 ```
 # 7) Final tweaks before plotting
 
-I am leaving this section for any last changes like column names changes , selecting data etc
+I am leaving this section for any last changes like adding cluster data, column names changes , selecting data etc
 
-# 7-I Select data
+# 7-I Cluster data integration
 
-#* First I select the number of rows I need in the plot like this
+#* First I added cluster categories (to add as a filter later on section 8) with a minimum limit with this script. You can select a custom number of clusters to filter by. Here I use 
 
-```bash
-head -n 10000 ranked_genes_unique_celltypes_and_groups_and_classes.tsv > top_10k.tsv
-```
+1 or below and
 
-#* Then I added cluster categories (to add as a filter later on section 8) with a minimum limit with this script
+2 or above as limits
 
-# 7_II Cluster categories
+# 7_II Cluster categories script
+
+categorize_column.py
 ```py
 
 import pandas as pd
@@ -2166,10 +2166,20 @@ if __name__ == "__main__":
 python categorize_column.py <input_file> <output_file> <selected_column> <selected_number> <result_column>
 ```
 # 7-IV Run command
+
+I ran it like following
 ```bash
-python categorize_column.py top_10k.tsv top_10k_with_cluster_categories.tsv clusters_used 2 cluster_limit
+python categorize_column.py ranked_genes_unique_celltypes_and_groups_and_classes.tsv ranked_genes_with_cluster_categories.tsv c
+lusters_used 2 cluster_limit
 ```
 
+# 7-V Select data
+
+#* First I select the number of rows I need in the plot like this
+
+```bash
+head -n 10000 ranked_genes_unique_celltypes_and_groups_and_classes.tsv > top_10k.tsv
+```
 
 # 8) Making interactive plots universal_plot_maker_plus.py
 
