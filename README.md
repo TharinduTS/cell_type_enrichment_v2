@@ -2385,18 +2385,6 @@ if __name__ == "__main__":
 
 ## 8-III CLI help
 
-Usage
-```
-python extract_regex.py [options]
-```
-Command‑Line Help — extract_regex.py
-====================================
-
-extract_regex.py extracts the n‑th token from a delimited column (e.g., “Protein class”)
-that matches a user‑supplied regex pattern. It supports TSV/CSV files, regex matching,
-multiple prefixes, case‑insensitive searches, chunked processing for large files, and
-customizable delimiters.
-
 USAGE
 -----
     python extract_regex.py [options]
