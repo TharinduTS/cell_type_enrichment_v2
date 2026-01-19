@@ -2188,7 +2188,9 @@ https://www.proteinatlas.org/search/sa_location%3ASecreted+-+unknown+location%2C
 ```
 It had protein type data in the column 'Protein type' as the first comma seperated value that starts with 'Predicted'. I extracted those preotei type data with other needed columns with the following script
 
-## 8-II Script
+## 8-II Extract essential data
+
+###Script
 
 extract_regex.py
 ```py
@@ -2383,7 +2385,7 @@ if __name__ == "__main__":
     main()
 ```
 
-## 8-III CLI help
+### CLI help
 
 ```txt
 USAGE
@@ -2491,7 +2493,7 @@ NOTES
 • For TSV files, prefer --file-delim $'\t' to ensure correct parsing.
 • Missing or empty target values produce empty output tokens.
 ```
-## 8-IV Run
+### Run
 ```bash
 python extract_regex.py \
   --input secretome_dataset.tsv \
@@ -2504,6 +2506,12 @@ python extract_regex.py \
   --nth 1 \
   --ignore-case
 ```
+## 8-III Merging protein type data with enrichment
+
+
+
+
+
 
 ## 7-VISelect data
 
