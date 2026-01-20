@@ -2685,13 +2685,14 @@ python replace_empty_values.py \
 head -n 10000 final_data_cleaned.tsv> top_10k_from_final_data.tsv
 ```
 
-# 9) Making interactive plots universal_plot_maker_plus.py
+# 9) Making interactive plots 
 
-I made interactive plots with my script here 
+I made interactive plots with universal_plot_maker_plus.py
 
 ## 9-I Script
 
 universal_plot_maker_plus.py
+
 ```url
 https://github.com/TharinduTS/universal_plot_maker_plus/blob/main/README.md
 ```
