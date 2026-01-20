@@ -2685,17 +2685,17 @@ python replace_empty_values.py \
 head -n 10000 final_data_cleaned.tsv> top_10k_from_final_data.tsv
 ```
 
-# 8) Making interactive plots universal_plot_maker_plus.py
+# 9) Making interactive plots universal_plot_maker_plus.py
 
 I made interactive plots with my script here 
 
-## 8-I Script
+## 9-I Script
 
 universal_plot_maker_plus.py
 ```url
 https://github.com/TharinduTS/universal_plot_maker_plus/blob/main/README.md
 ```
-## 8-II Run
+## 9-II Run
 
 With following command
 
@@ -2723,16 +2723,16 @@ python universal_plot_maker_plus.py \
   --self-contained \
   --lang en
 ```
-# 9) User interface
+# 10) User interface
 
-## 9-I Snapshot
+## 10-I Snapshot
 
 Following is a snapshot of what CellType Enrichment V 2.1 looks like.
 
 <img width="974" height="489" alt="image" src="https://github.com/user-attachments/assets/e8189671-8478-4e14-b6eb-24c61aa00d47" />
 A view of user interface
 
-## 9-II Plot behavior 
+## 10-II Plot behavior 
 1	Plot Type – This allows you to select the plot time you want to visualize data in. At the moment, I am only using bar plots as they make most sense for this type of data
 
 2	Color by – This allows you to select which column you want to color your data by. Eg: Cell type gives different colors to different cell types/ Cell type group color bars by the cell type group
@@ -2753,7 +2753,7 @@ A view of user interface
 
 
 
-## 9-III Filter Menus
+## 10-III Filter Menus
 
 1	Cell type class- Lets you filter data by cell type class
 
@@ -2763,19 +2763,21 @@ A view of user interface
 
 4	Cluster limit – Lets you filter data based on how many clusters were used for the calculation. For now it lets you select all, one cluster or below and 2 clusters or above.
 
-## 9-IV Search Bars
+5   Protein_Class - Lets you filter based on protein class
+
+## 10-IV Search Bars
 
 1	Search in Gene – Lets you search genes by gene ID 
 
 2	Search in Gene name – Lets you search genes by gene name
 
-## 9-V Buttons
+## 10-V Buttons
 
 1	Reset – Resets the plot to original values
 
 2	Export TSV – Exports currently selected data as a TSV file
 
-## 9- VI Information shown
+## 10- VI Information shown
 
 1	Gene – Gene ID
 
@@ -2826,7 +2828,7 @@ So basically, if a gene is  only expressed in one cell type, gene with a higher 
 
 22	top_percent_Cell_type_classes - cell type class/es the current gene is expressed in
 
-## 9-VII Use cases
+## 10-VII Use cases
 
 ### Visualizing
 
