@@ -2199,71 +2199,95 @@ extract_regex.py
 # -*- coding: utf-8 -*-
 
 """
-Extract the nth token from a delimited cell that matches a regex pattern,
-and output selected ID columns plus the matched token.
+Extract tokens from a delimited column that match a regex pattern.
 
-Example:
+Features:
+- Regex-based matching (prefix by default via re.match, or anywhere via re.search).
+- Extract the nth match (supports multiple nth values, e.g., --nth 1 2 3).
+- Or extract ALL matches in a single column via --all-matches.
+- Handles large files with --chunksize streaming.
+- Fully configurable delimiters and encoding.
+
+Examples:
+    # First value that starts with Predicted or Secreted
     python extract_regex.py \
-        --input input.tsv \
-        --output output.tsv \
-        --file-delim "\t" \
+        --input genes.tsv \
+        --output out.tsv \
+        --file-delim $'\t' \
         --id-cols Gene Ensembl \
         --target-col "Protein class" \
         --value-sep "," \
-        --pattern "Predicted|Secreted" \
-        --nth 1 \
+        --pattern 'Predicted|Secreted' \
         --ignore-case \
-        --chunksize 200000
+        --nth 1
+
+    # First and second matches + all matches
+    python extract_regex.py \
+        --input genes.tsv \
+        --output out_all.tsv \
+        --file-delim $'\t' \
+        --id-cols Gene Ensembl \
+        --target-col "Protein class" \
+        --value-sep "," \
+        --pattern 'Predicted|Secreted' \
+        --ignore-case \
+        --nth 1 2 \
+        --all-matches \
+        --join-matches-sep "; "
 """
 
 import argparse
 import sys
 import re
-import pandas as pd
 from typing import List, Optional
+import pandas as pd
 
 
-def pick_nth_regex(cell: Optional[str],
-                   pattern: str,
-                   sep: str,
-                   nth: int,
-                   ignore_case: bool,
-                   match_anywhere: bool = False) -> str:
-    """
-    From a delimited string cell, return the nth token that matches `pattern`.
-    - nth is 1-based.
-    - Returns empty string if not found or cell is null.
-    - By default, uses `re.match()` (start-of-string). If match_anywhere=True, uses `re.search()`.
-    """
+# ---------------------------
+# Core helpers
+# ---------------------------
+
+def split_tokens(cell: Optional[str], sep: str) -> List[str]:
+    """Split a cell string by sep and trim whitespace. Return [] for null/empty."""
     if cell is None or (isinstance(cell, float) and pd.isna(cell)):
-        return ""
-    text = str(cell)
+        return []
+    text = str(cell).strip()
+    if not text:
+        return []
+    return [tok.strip() for tok in text.split(sep)]
 
-    tokens = [tok.strip() for tok in text.split(sep)]
 
+def compile_regex(pattern: str, ignore_case: bool) -> re.Pattern:
+    """Compile the regex with optional IGNORECASE; raise ValueError on invalid regex."""
     flags = re.IGNORECASE if ignore_case else 0
     try:
-        rx = re.compile(pattern, flags)
+        return re.compile(pattern, flags)
     except re.error as rex:
-        # Bubble up a clearer message for invalid regex
         raise ValueError(f"Invalid regex pattern '{pattern}': {rex}")
 
+
+def find_matches_in_tokens(tokens: List[str], rx: re.Pattern, match_anywhere: bool) -> List[str]:
+    """Return tokens that match the regex (match at start or anywhere depending on flag)."""
     matcher = rx.search if match_anywhere else rx.match
-    matches = [tok for tok in tokens if matcher(tok)]
+    return [t for t in tokens if matcher(t)]
 
-    if nth <= 0:
-        return ""
-    return matches[nth - 1] if len(matches) >= nth else ""
 
+# ---------------------------
+# Processing
+# ---------------------------
 
 def process_chunk(df: pd.DataFrame,
                   id_cols: List[str],
                   target_col: str,
                   pattern: str,
                   value_sep: str,
-                  nth: int,
+                  nth_list: Optional[List[int]],
+                  all_matches: bool,
+                  join_matches_sep: str,
                   ignore_case: bool,
                   match_anywhere: bool) -> pd.DataFrame:
+    """Process a DataFrame chunk and return the output DataFrame with requested columns."""
+    # Validate columns
     if target_col not in df.columns:
         raise KeyError(f"Target column '{target_col}' not found. Available: {list(df.columns)}")
 
@@ -2271,48 +2295,87 @@ def process_chunk(df: pd.DataFrame,
     if missing_id:
         raise KeyError(f"ID columns not found: {missing_id}. Available: {list(df.columns)}")
 
-    extracted = df[target_col].apply(
-        lambda x: pick_nth_regex(
-            x,
-            pattern=pattern,
-            sep=value_sep,
-            nth=nth,
-            ignore_case=ignore_case,
-            match_anywhere=match_anywhere
-        )
+    # Determine behavior: default to nth=[1] if neither nth nor all-matches provided
+    if (not all_matches) and (not nth_list):
+        nth_list = [1]
+
+    # Validate nth_list (positive integers) and de-duplicate while preserving order
+    if nth_list:
+        seen = set()
+        clean_nth = []
+        for n in nth_list:
+            if not isinstance(n, int) or n <= 0:
+                raise ValueError(f"--nth values must be positive integers. Got: {n}")
+            if n not in seen:
+                clean_nth.append(n)
+                seen.add(n)
+        nth_list = clean_nth
+
+    # Compile regex once per chunk
+    rx = compile_regex(pattern, ignore_case)
+
+    # Compute matches once per row
+    matches_series = df[target_col].apply(
+        lambda cell: find_matches_in_tokens(split_tokens(cell, value_sep), rx, match_anywhere)
     )
 
-    out_match_col = f"{target_col}__regex_nth{nth}"
+    # Start output with ID columns
     out_df = df[id_cols].copy()
-    out_df[out_match_col] = extracted
+
+    # Add nth columns
+    if nth_list:
+        for n in nth_list:
+            colname = f"{target_col}__regex_nth{n}"
+            out_df[colname] = matches_series.apply(lambda m: m[n - 1] if len(m) >= n else "")
+
+    # Add all-matches column
+    if all_matches:
+        colname_all = f"{target_col}__regex_all"
+        out_df[colname_all] = matches_series.apply(lambda m: join_matches_sep.join(m) if m else "")
+
     return out_df
 
 
+# ---------------------------
+# CLI
+# ---------------------------
+
+def build_arg_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(
+        description="Extract nth or all regex-matching tokens from a delimited column."
+    )
+    p.add_argument("--input", required=True, help="Path to input file (TSV/CSV/other delimited).")
+    p.add_argument("--output", required=True, help="Path to output file.")
+    p.add_argument("--file-delim", default="\t", help=r"Input file delimiter. Default: '\t'.")
+    p.add_argument("--output-delim", default="\t", help=r"Output file delimiter. Default: '\t'.")
+    p.add_argument("--encoding", default="utf-8", help="Input file encoding. Default: utf-8.")
+    p.add_argument("--id-cols", nargs="+", required=True,
+                   help="Columns to include in output (e.g., Gene Ensembl).")
+    p.add_argument("--target-col", required=True,
+                   help="Column containing delimited values (e.g., 'Protein class').")
+    p.add_argument("--value-sep", default=",",
+                   help="Separator used inside the target column values. Default: ','.")
+    p.add_argument("--pattern", required=True,
+                   help=("Regex pattern to match tokens. Examples: 'Predicted|Secreted' (prefix by default), "
+                         "'^(Predicted|Secreted)', or '.*(Predicted|Secreted).*' with --match-anywhere."))
+    p.add_argument("--nth", nargs="+", type=int, default=None,
+                   help="One or more 1-based match indexes to extract (e.g., --nth 1 2 3).")
+    p.add_argument("--all-matches", action="store_true",
+                   help="Also output ALL matching tokens joined into one column.")
+    p.add_argument("--join-matches-sep", default="; ",
+                   help="Separator used when joining all matches. Default: '; '.")
+    p.add_argument("--ignore-case", action="store_true",
+                   help="Case-insensitive regex matching.")
+    p.add_argument("--match-anywhere", action="store_true",
+                   help="Use re.search() (match anywhere). Default uses re.match() (prefix only).")
+    p.add_argument("--chunksize", type=int, default=None,
+                   help="Read/process file in chunks (rows per chunk) for large datasets.")
+    return p
+
+
 def main():
-    parser = argparse.ArgumentParser(description="Extract nth token matching a regex from a delimited column.")
-    parser.add_argument("--input", required=True, help="Path to input file (TSV/CSV/other delimited).")
-    parser.add_argument("--output", required=True, help="Path to output file.")
-    parser.add_argument("--file-delim", default="\t", help=r"File delimiter. Default: '\t'.")
-    parser.add_argument("--id-cols", nargs="+", required=True, help="Columns to pass through (e.g., Gene Ensembl).")
-    parser.add_argument("--target-col", required=True, help="Column containing delimited values (e.g., 'Protein class').")
-    parser.add_argument("--value-sep", default=",", help="Separator used inside target column values. Default: ','.")
-    parser.add_argument("--pattern", required=True,
-                        help=("Regex pattern to match tokens. "
-                              "Examples: 'Predicted|Secreted' (start-only via default), "
-                              "'^(Predicted|Secreted)', or '.*(Predicted|Secreted).*' with --match-anywhere."))
-    parser.add_argument("--nth", type=int, default=1, help="Which match to pick (1-based). Default: 1.")
-    parser.add_argument("--ignore-case", action="store_true", help="Case-insensitive regex matching.")
-    parser.add_argument("--match-anywhere", action="store_true",
-                        help="Use regex search anywhere in token (re.search). Default is start-only (re.match).")
-    parser.add_argument("--chunksize", type=int, default=None, help="Read file in chunks (rows per chunk).")
-    parser.add_argument("--encoding", default="utf-8", help="Input file encoding. Default: utf-8.")
-    parser.add_argument("--output-delim", default="\t", help=r"Output file delimiter. Default: '\t'.")
-
+    parser = build_arg_parser()
     args = parser.parse_args()
-
-    if args.nth <= 0:
-        print("--nth must be >= 1", file=sys.stderr)
-        sys.exit(2)
 
     try:
         if args.chunksize:
@@ -2331,7 +2394,9 @@ def main():
                     target_col=args.target_col,
                     pattern=args.pattern,
                     value_sep=args.value_sep,
-                    nth=args.nth,
+                    nth_list=args.nth,
+                    all_matches=args.all_matches,
+                    join_matches_sep=args.join_matches_sep,
                     ignore_case=args.ignore_case,
                     match_anywhere=args.match_anywhere
                 )
@@ -2358,7 +2423,9 @@ def main():
                 target_col=args.target_col,
                 pattern=args.pattern,
                 value_sep=args.value_sep,
-                nth=args.nth,
+                nth_list=args.nth,
+                all_matches=args.all_matches,
+                join_matches_sep=args.join_matches_sep,
                 ignore_case=args.ignore_case,
                 match_anywhere=args.match_anywhere
             )
@@ -2374,7 +2441,7 @@ def main():
         print(f"[Parse Error] {pe}", file=sys.stderr)
         sys.exit(1)
     except ValueError as ve:
-        print(f"[Regex Error] {ve}", file=sys.stderr)
+        print(f"[Regex/Argument Error] {ve}", file=sys.stderr)
         sys.exit(1)
     except Exception as e:
         print(f"[Unexpected Error] {e}", file=sys.stderr)
@@ -2417,6 +2484,7 @@ Token Parsing
                            "^(Predicted|Secreted)"
                            ".*(Predicted|Secreted).*"
 --nth <int>              Select the n‑th matching token (1‑based). Default: 1.
+--all-matches			 Gets all matches in addition to n-th
 --ignore-case            Enable case‑insensitive regex matching.
 --match-anywhere         Use re.search() instead of re.match().
                          Default behavior uses re.match() (anchored at start).
@@ -2502,23 +2570,119 @@ python extract_regex.py \
   --id-cols Gene Ensembl \
   --target-col "Protein class" \
   --value-sep "," \
-  --pattern "Predicted" \
-  --nth 1 \
-  --ignore-case
+  --pattern 'Predicted' \
+  --ignore-case \
+  --all-matches \
+  --join-matches-sep ": "
 ```
 ## 8-III Merging protein type data with enrichment
 
+I Started by renaming the columns of genes_with_protein_type.tsv in a meaningful way to make it easier to map
 
+First I 
 
+### made a mapping tsv 
 
+file for column names with new column names
 
+new_header.txt
+```txt
+Gene name       Gene    Protein_Class
+```
+### and renamed with 
+```bash
+{ 
+  cat new_header.txt
+  tail -n +2 genes_with_protein_type.tsv
+} > genes_with_protein_type_cols_renamed.tsv
+```
+### Then Merged 
 
-## 7-VISelect data
+this data to my main dataframe with the merge dcript in section 1
+```bash
+python merge_tsv_by_keys.py \
+  --left ranked_genes_with_cluster_categories.tsv \
+  --right genes_with_protein_type_cols_renamed.tsv \
+  --left-keys "Gene","Gene name" \
+  --right-keys "Gene","Gene name" \
+  --right-cols "Protein_Class" \
+  --out  ranked_genes_with_group_cluster_and_protein_class_data.tsv
+```
+And then 
+
+### Replaced empty values
+
+with
+
+replace_empty_values.py
+```pr
+
+#!/usr/bin/env python3
+
+import pandas as pd
+import numpy as np
+import argparse
+import os
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Replace empty or NaN values in a chosen column with a custom value."
+    )
+
+    parser.add_argument("-i", "--input", required=True, help="Input CSV/TSV file")
+    parser.add_argument("-o", "--output", required=True, help="Output CSV/TSV file")
+    parser.add_argument("-c", "--column", required=True, help="Column name to process")
+    parser.add_argument("-r", "--replacement", required=True, help="Value to replace empty/NaN")
+    parser.add_argument("-d", "--delimiter", default="\t",
+                        help="Field delimiter (default: tab for TSV)")
+
+    args = parser.parse_args()
+
+    # Check file exists
+    if not os.path.exists(args.input):
+        raise FileNotFoundError(f"Input file not found: {args.input}")
+
+    print(f"Loading file: {args.input}")
+    df = pd.read_csv(args.input, delimiter=args.delimiter)
+
+    if args.column not in df.columns:
+        raise ValueError(
+            f"Column '{args.column}' not found.\n"
+            f"Available columns:\n{list(df.columns)}"
+        )
+
+    print(f"Cleaning column: {args.column}")
+
+    # Replace empty strings or whitespace-only strings with NaN
+    df[args.column] = df[args.column].replace(r'^\s*$', np.nan, regex=True)
+
+    # Replace NaN with user-supplied replacement value
+    df[args.column] = df[args.column].fillna(args.replacement)
+
+    print(f"Saving cleaned file to: {args.output}")
+    df.to_csv(args.output, sep=args.delimiter, index=False)
+
+    print("Done!")
+
+if __name__ == "__main__":
+    main()
+```
+### Ran it like
+```
+python replace_empty_values.py \
+    -i ranked_genes_with_group_cluster_and_protein_class_data.tsv \
+    -o ranked_genes_cleaned.tsv \
+    -c Protein_Class \
+    -r Unknown_Protein_Class \
+    -d $'\t'
+```
+
+## 8-IV Select data
 
 #* Finally I select the number of rows I need in the plot like this
 
 ```bash
-head -n 10000 ranked_genes_unique_celltypes_and_groups_and_classes.tsv > top_10k.tsv
+head -n 10000 final_data_cleaned.tsv> top_10k_from_final_data.tsv
 ```
 
 # 8) Making interactive plots universal_plot_maker_plus.py
@@ -2537,7 +2701,7 @@ With following command
 
 ```bash
 python universal_plot_maker_plus.py \
-  --file top_10k_with_cluster_categories.tsv \
+  --file top_10k_from_final_data.tsv \
   --out Celltype_Enrichment_V2_1_top_10k.html \
   --plot-type bar \
   --x-choices "Gene name | Gene" \
@@ -2546,9 +2710,9 @@ python universal_plot_maker_plus.py \
   --default-y "log2_enrichment_penalized" \
   --color-col "Cell type" \
   --color-choices "Cell type|Cell type group|Cell type class" \
-  --filter-cols "Cell type class|Cell type group|Cell type|cluster_limit" \
+  --filter-cols "Cell type class|Cell type group|Cell type|cluster_limit|Protein_Class" \
   --search-cols "Gene|Gene name" \
-  --details "Gene|Gene name|Cell type|Cell type group|Cell type class|clusters_used|Enrichment score|log2_enrichment| specificity_tau |log2_enrichment_penalized|top_percent_Cell_type_count|top_percent_Cell_type_group_count|top_percent_Cell_type_class_count|overall_rank_by_Cell_type|overall_rank_by_Cell_type_group|overall_rank_by_Cell_type_class|rank_within_Cell_type|rank_within_Cell_type_group|rank_within_Cell_type_class|top_percent_Cell_types|top_percent_Cell_type_groups|top_percent_Cell_type_classes" \
+  --details "Gene|Gene name|Cell type|Cell type group|Cell type class|clusters_used|Enrichment score|log2_enrichment| specificity_tau |log2_enrichment_penalized|top_percent_Cell_type_count|top_percent_Cell_type_group_count|top_percent_Cell_type_class_count|overall_rank_by_Cell_type|overall_rank_by_Cell_type_group|overall_rank_by_Cell_type_class|rank_within_Cell_type|rank_within_Cell_type_group|rank_within_Cell_type_class|top_percent_Cell_types|top_percent_Cell_type_groups|top_percent_Cell_type_classes|Protein_Class" \
   --title "Celltype Enrichmnt V 2.1" \
   --dup-policy overlay \
   --sort-primary "overall_rank_by_Cell_type" \
