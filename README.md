@@ -2168,8 +2168,7 @@ python categorize_column.py <input_file> <output_file> <selected_column> <select
 
 I ran it like following
 ```bash
-python categorize_column.py ranked_genes_unique_celltypes_and_groups_and_classes.tsv ranked_genes_with_cluster_categories.tsv c
-lusters_used 2 cluster_limit
+python categorize_column.py ranked_genes_unique_celltypes_and_groups_and_classes.tsv ranked_genes_with_cluster_categories.tsv clusters_used 2 cluster_limit
 ```
 
 # 8) Protein type data integration
