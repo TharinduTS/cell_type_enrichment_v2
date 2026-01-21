@@ -2588,6 +2588,9 @@ new_header.txt
 ```txt
 Gene name       Gene    Protein_Class
 ```
+
+#*MAKE SURE THESE HEADERS ARE TAB SEPERATED. SOMETIMES COPY PASTING DOES NOT WORK*
+
 ### and renamed with 
 ```bash
 { 
