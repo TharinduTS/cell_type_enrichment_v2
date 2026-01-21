@@ -2675,7 +2675,7 @@ python replace_empty_values.py \
     -i ranked_genes_with_group_cluster_and_protein_class_data.tsv \
     -o ranked_genes_cleaned.tsv \
     -c Protein_Class \
-    -r Unknown_Protein_Class \
+    -r No_predicted_protein_class \
     -d $'\t'
 ```
 
@@ -2684,7 +2684,7 @@ python replace_empty_values.py \
 #* Finally I select the number of rows I need in the plot like this
 
 ```bash
-head -n 10000 final_data_cleaned.tsv> top_10k_from_final_data.tsv
+head -n 20000 ranked_genes_cleaned.tsv> top_20k_from_final_data.tsv
 ```
 
 # 9) Making interactive plots 
@@ -2704,8 +2704,8 @@ With following command
 
 ```bash
 python universal_plot_maker_plus.py \
-  --file top_10k_from_final_data.tsv \
-  --out Celltype_Enrichment_V2_1_top_10k.html \
+  --file top_20k_from_final_data.tsv \
+  --out Celltype_Enrichment_V2_1_top_20k.html \
   --plot-type bar \
   --x-choices "Gene name | Gene" \
   --y-choices "Enrichment score|log2_enrichment| specificity_tau | Enrichment score (tau penalized)|log2_enrichment_penalized" \
