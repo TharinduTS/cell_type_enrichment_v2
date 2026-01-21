@@ -2684,7 +2684,7 @@ python replace_empty_values.py \
 #* Finally I select the number of rows I need in the plot like this
 
 ```bash
-head -n 20000 ranked_genes_cleaned.tsv> top_20k_from_final_data.tsv
+head -n 10000 ranked_genes_cleaned.tsv> top_10k_from_final_data.tsv
 ```
 
 # 9) Making interactive plots 
@@ -2704,8 +2704,8 @@ With following command
 
 ```bash
 python universal_plot_maker_plus.py \
-  --file top_20k_from_final_data.tsv \
-  --out Celltype_Enrichment_V2_1_top_20k.html \
+  --file top_10k_from_final_data.tsv \
+  --out Celltype_Enrichment_V2_1_top_10k.html \
   --plot-type bar \
   --x-choices "Gene name | Gene" \
   --y-choices "Enrichment score|log2_enrichment| specificity_tau | Enrichment score (tau penalized)|log2_enrichment_penalized" \
