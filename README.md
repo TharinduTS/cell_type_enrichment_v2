@@ -2039,7 +2039,7 @@ misc:
 
 #*I Ranked these first by 'Cell type'*
 
-#*And only checked the prescense in top 95% of the enrichment values as lowest 5% could be close to background noise*
+#*And checked the prescense in the positive enrichment values as minus means depletion. (used 100% of the positive values here)
 
 ```
 python rank_genes.py \
