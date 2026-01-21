@@ -2048,7 +2048,7 @@ python rank_genes.py \
   --presence-col "Cell type" \
   --unique-col "Cell type" \
   --unique \
-  --top-percent 95 \
+  --top-percent 100 \
   --top-col log2_enrichment_penalized \
   --sorting-col log2_enrichment_penalized \
   --gene-col Gene \
