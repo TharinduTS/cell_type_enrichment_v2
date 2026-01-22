@@ -2856,6 +2856,9 @@ Transition from genes expressed in one cell type to genes expressed in two cell 
 
 ### Downloading
 
+#*NOTE*
+#*When you download rows based on a order number, make sure you have selected separate as duplicate policy so the overlay/stacked plots for the same gene do not confuse you*
+
 This script gives you multiple ways to select and download data with ‘Export TSV’ button.
 
 #### Normal download
