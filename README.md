@@ -2881,7 +2881,7 @@ Then you can use secondary sort as ‘cell type’
 
 In addition to all the features I had explained in my previous version, following are a few of the new, interesting features I thought worth noting. In this section, I try to explain these with examples.
 
-#### Ranking by cell type groups and cell type classes
+### Ranking by cell type groups and cell type classes
 
 In addition to the default loading setting: genes ranked by cell type specificity, now this supports genes ranked by cell type groups and classes.
 As an example, most germ cells do not make it to the top of the list when you are in the default ‘overall rank by cell type’ setting as they are expressed in multiple cell types that are closely related. But if you change it to ‘overall rank by cell type group’, this does not push a gene back for being present in multiple cell types- if they are closely related (See figure : Gene SPEM2).
@@ -2890,6 +2890,60 @@ As an example, most germ cells do not make it to the top of the list when you ar
 Overall rank by cell type group brings germ cells to the top of the list
 
 This gene SPEM2 in the example is present in early spermatids and late spermatids, which sometimes you would not want to consider as two different cell types. This brings such genes up in the list. You can do the same with cell type group (please note that It is still using enrichment values calculated by cell type for now. This works totally fine even if this is not the 100% perfect solution). 
+
+### Color by groups
+
+Sometimes the amount of details can be too much depending on what you are looking for. Therefore, now you have properly working color by options.
+Using the same example above, if you change the color by option to ‘Cell type group’, now you can see the whole bar for the gene SPEM2 and genes in the same group (like PRM2 right next to SPEM2 in figure 6) have the same color.
+
+<img width="975" height="459" alt="image" src="https://github.com/user-attachments/assets/20df0fa3-15db-46a5-88b9-ee4f3ef2a6b9" />
+Color by cell type group bringing cell types from the same group together
+
+Again, you can do this by class as well.
+
+### Duplicate policies
+
+After the top half of the list, genes can be expressed in more than one cell type. Duplicate policies give you multiple ways of handling this.
+
+#### Overlay
+
+The default setting: overlay plots the cell types that express the same gene together. This is like a 3D plot with the cell type with the highest enrichment value in the back and the cell types that express the same gene, but with lower enrichment values in the front. You can see this in the same example (please see figure 8). SPEM2 expression in late spermatids (represented by light pink) is higher than early spermatids (dark pink bar in front of the previous).
+
+<img width="338" height="455" alt="image" src="https://github.com/user-attachments/assets/a033cee7-69b0-49e8-986f-c3bb9d45c6fc" />
+Overlay plots showing how the same gene is expressed in multiple cell types
+
+#### Stack
+
+This option lets you stack enrichment values for all the cell types for a certain gene on top of each other. This is good for broad level comparisons.
+
+#### Sum
+
+This gives you the sum of enrichment values for each gene for all the cell types it is expressed in. I found this nice when you compare expression of different cell type groups, and you are not particularly interested in some sub cell types.  Using the same example above, even though it looked like the top ranking gene ‘LALBA’ had a way higher level of cell specific expression in the default setting, when you check the sum of the expression on SPEM2 in closely related early and late spermatids, the difference noticeably decreases 
+
+<img width="975" height="471" alt="image" src="https://github.com/user-attachments/assets/496c02ec-2acc-4408-b8ba-2a043a756b64" />
+Using duplicate policy 'sum' for cell group comparisons
+
+#### Separate
+
+Even though previous policies are nice for visualizing, they can be confusing when you try to download data based on their rank. Using the same example, the cell types SPEM2 is expressed in, early and late spermatids are plotted together in previous modes despite their overall rank by cell type groups being 245 and 452. Separate mode splits such groupings and adds numbers to genes that are expressed in more than one cell type to show the rank for that particular cell type within that gene. See the example in figures 10 and 11 showing how the ranking is visualized for GGTLC1 expressed in alveolar cells type 1 (Red) and alveolar cells type 2 (Purple) in ‘overlay’ and ‘separate’ plots.
+
+<img width="960" height="520" alt="image" src="https://github.com/user-attachments/assets/d1f6db8c-843e-42a7-81d9-5c6d26576d3e" />
+Genes expressed in two cell types represented in 'overlay' plots
+
+<img width="975" height="574" alt="image" src="https://github.com/user-attachments/assets/70c8ae0e-846d-4f57-ac63-21a57f0387a5" />
+Genes expressed in two cell types represented in 'separate' plots
+
+#### Max, Mean, Median, First
+
+Gives you option to see Max, Mean, Median or first occurrence
+
+### Protein Classes
+
+In addition to previous filtering tools, I added a protein class filter with following classes
+Predicted intracellular proteins
+Predicted membrane proteins
+Predicted secreted proteins’
+According to HPA (https://www.proteinatlas.org/humanproteome/tissue/secretome#classification_of_the_secretome), ‘The human secretome comprises all proteins that are potentially secreted from the cell.’
 
 
 
