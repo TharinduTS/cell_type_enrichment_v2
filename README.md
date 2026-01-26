@@ -2877,8 +2877,7 @@ As an example, if you want to download the top values for each cell type, you ca
 
 Then you can use secondary sort as ‘cell type’ 
 
-#*NOTE: This last part may need a little more work to get it working perfectly*
-
+## 10-VIII App Walkthrough
 
 
 
