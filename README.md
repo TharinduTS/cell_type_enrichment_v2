@@ -2879,6 +2879,21 @@ Then you can use secondary sort as ‘cell type’
 
 ## 10-VIII App Walkthrough
 
+In addition to all the features I had explained in my previous version, following are a few of the new, interesting features I thought worth noting. In this section, I try to explain these with examples.
+
+#### Ranking by cell type groups and cell type classes
+
+In addition to the default loading setting: genes ranked by cell type specificity, now this supports genes ranked by cell type groups and classes.
+As an example, most germ cells do not make it to the top of the list when you are in the default ‘overall rank by cell type’ setting as they are expressed in multiple cell types that are closely related. But if you change it to ‘overall rank by cell type group’, this does not push a gene back for being present in multiple cell types- if they are closely related (See figure : Gene SPEM2).
+
+<img width="975" height="370" alt="image" src="https://github.com/user-attachments/assets/bb3ffc3a-5d6b-4f65-8305-d2e702bdff81" />
+Overall rank by cell type group brings germ cells to the top of the list
+
+This gene SPEM2 in the example is present in early spermatids and late spermatids, which sometimes you would not want to consider as two different cell types. This brings such genes up in the list. You can do the same with cell type group (please note that It is still using enrichment values calculated by cell type for now. This works totally fine even if this is not the 100% perfect solution). 
+
+
+
+
 
 
 
