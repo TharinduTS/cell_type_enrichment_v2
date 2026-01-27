@@ -2943,9 +2943,11 @@ Gives you option to see Max, Mean, Median or first occurrence
 ### Protein Classes
 
 In addition to previous filtering tools, I added a protein class filter with following classes
+
 Predicted intracellular proteins
 Predicted membrane proteins
-Predicted secreted proteins’
+Predicted secreted proteins
+
 According to HPA (https://www.proteinatlas.org/humanproteome/tissue/secretome#classification_of_the_secretome), ‘The human secretome comprises all proteins that are potentially secreted from the cell.’
 
 
