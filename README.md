@@ -2910,6 +2910,7 @@ After the top half of the list, genes can be expressed in more than one cell typ
 The default setting: overlay plots the cell types that express the same gene together. This is like a 3D plot with the cell type with the highest enrichment value in the back and the cell types that express the same gene, but with lower enrichment values in the front. You can see this in the same example (please see figure 8). SPEM2 expression in late spermatids (represented by light pink) is higher than early spermatids (dark pink bar in front of the previous).
 
 <img width="338" height="455" alt="image" src="https://github.com/user-attachments/assets/a033cee7-69b0-49e8-986f-c3bb9d45c6fc" />
+
 Overlay plots showing how the same gene is expressed in multiple cell types
 
 #### Stack
@@ -2931,6 +2932,7 @@ Even though previous policies are nice for visualizing, they can be confusing wh
 Genes expressed in two cell types represented in 'overlay' plots
 
 <img width="975" height="574" alt="image" src="https://github.com/user-attachments/assets/70c8ae0e-846d-4f57-ac63-21a57f0387a5" />
+
 Genes expressed in two cell types represented in 'separate' plots
 
 #### Max, Mean, Median, First
