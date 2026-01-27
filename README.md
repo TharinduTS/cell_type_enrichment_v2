@@ -2929,6 +2929,7 @@ Using duplicate policy 'sum' for cell group comparisons
 Even though previous policies are nice for visualizing, they can be confusing when you try to download data based on their rank. Using the same example, the cell types SPEM2 is expressed in, early and late spermatids are plotted together in previous modes despite their overall rank by cell type groups being 245 and 452. Separate mode splits such groupings and adds numbers to genes that are expressed in more than one cell type to show the rank for that particular cell type within that gene. See the example in figures 10 and 11 showing how the ranking is visualized for GGTLC1 expressed in alveolar cells type 1 (Red) and alveolar cells type 2 (Purple) in ‘overlay’ and ‘separate’ plots.
 
 <img width="960" height="520" alt="image" src="https://github.com/user-attachments/assets/d1f6db8c-843e-42a7-81d9-5c6d26576d3e" />
+
 Genes expressed in two cell types represented in 'overlay' plots
 
 <img width="975" height="574" alt="image" src="https://github.com/user-attachments/assets/70c8ae0e-846d-4f57-ac63-21a57f0387a5" />
