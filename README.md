@@ -2948,7 +2948,7 @@ Predicted intracellular proteins
 Predicted membrane proteins
 Predicted secreted proteins
 
-According to HPA (https://www.proteinatlas.org/humanproteome/tissue/secretome#classification_of_the_secretome), ‘The human secretome comprises all proteins that are potentially secreted from the cell.’
+According to HPA (https://www.proteinatlas.org/humanproteome/tissue/secretome#classification_of_the_secretome), The human secretome comprises all proteins that are potentially secreted from the cell.
 
 
 
