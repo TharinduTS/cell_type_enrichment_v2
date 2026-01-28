@@ -2695,7 +2695,7 @@ python replace_empty_values.py \
 ```
 ## 8-III Merge tissue type data
 
-Then I added tissue data for these filtered rows from the earlier filtered data file.
+#*Then I added tissue data for these filtered rows from the earlier filtered data file "combined_expression_data_filtered.tsv" from chapter 2*
 
 ### Script
 
@@ -2978,7 +2978,7 @@ if __name__ == "__main__":
 
 ### CLI help
 
-atch_and_collect.py matches combinations of columns between two tables, collects values from the second table, and appends them as a new column to the first table.
+Match_and_collect.py matches combinations of columns between two tables, collects values from the second table, and appends them as a new column to the first table.
 Supports CSV, TSV, TXT, XLSX, and XLS files, flexible filtering, deduplication, sorting, and case-insensitive matching.
 
 Usage
