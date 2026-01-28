@@ -2034,20 +2034,36 @@ misc:
         Show this help message and exit.
 
 ```
-## 6-IV Run command
+## 6-IV Dropping rows closer to background noise
+
+By comparing the enrichment values of known "Cell type specific (CTS)" genes, I figured to match the "expression identification sensitivity" of other studies, 
+I should not consider the rows with log2_enrichment_penalized value less than 4 (with expression values less than 16 times the background expression). Therefore I started by filtering those rows out
+
+```
+
+# Keeps the header, and only rows where log2_enrichment_penalized >= 4
+awk -F'\t' 'NR==1 {print; next} { if ($11+0 >= 4) print }' enrich_values_with_cell_class_data.tsv > enrich_values_with_cell_class_data_filtered.tsv
+```
+This gave me a file with more than 22k lines
+
+## 6-V Run command
 #*I ran it like following*
 
 #*I Ranked these first by 'Cell type'*
 
-#*And checked the prescense in the positive enrichment values as minus means depletion. (used 100% of the positive values here)
+#*And checked the prescense in the positive enrichment values as minus means depletion. This and drop-na functions should have been already taken care by the previous filtering step. But I am just using them in the first step*
+
+I use top-percent value of 100% here as I have performed some hard filtering already
 
 ```
 python rank_genes.py \
-  --input enrich_values_with_cell_class_data.tsv --drop-na --drop-negatives\
+  --input enrich_values_with_cell_class_data_filtered.tsv \
   --output ranked_genes_unique_celltypes.tsv \
   --presence-col "Cell type" \
   --unique-col "Cell type" \
   --unique \
+  --drop-na \
+  --drop-negatives \
   --top-percent 100 \
   --top-col log2_enrichment_penalized \
   --sorting-col log2_enrichment_penalized \
@@ -2057,7 +2073,6 @@ python rank_genes.py \
   --output-rank-within-col rank_within_Cell_type \
   --output-overall-rank-col overall_rank_by_Cell_type \
   --verbose
-
 ```
 
 #*Then I rankd them again by the PRESCENCE IN 'Cell type group'*
