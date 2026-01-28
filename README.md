@@ -3091,7 +3091,7 @@ python match_and_collect.py \
 #* Finally I select the number of rows I need in the plot like this
 
 ```bash
-head -n 10000 ranked_genes_cleaned.tsv> top_10k_from_final_data.tsv
+head -n 10000 ranked_genes_cleaned_with_tissue_data.tsv> top_10k_from_final_data.tsv
 ```
 
 # 9) Making interactive plots 
