@@ -2693,9 +2693,11 @@ python replace_empty_values.py \
     -r No_predicted_protein_class \
     -d $'\t'
 ```
-## 8-III merge_tissue_type_data
+## 8-III Merge tissue type data
 
 ### Script
+
+match_and_collect.py
 ```py
 
 #!/usr/bin/env python3
