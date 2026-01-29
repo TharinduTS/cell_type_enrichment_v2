@@ -3079,7 +3079,7 @@ python match_and_collect.py \
   --file1-keys "Gene name" "Cell type" \
   --file2-keys "Gene name" "Cell type" \
   --collect-column "Tissue" \
-  --filter-col nCPM --filter-op ">" --filter-value 1 \
+  --filter-col nCPM --filter-op ">" --filter-value 0 \
   --output-column "Present tissues" \
   --sep-out " & " \
   --drop-dupes \
