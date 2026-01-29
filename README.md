@@ -3120,7 +3120,7 @@ python universal_plot_maker_plus.py \
   --default-y "log2_enrichment_penalized" \
   --color-col "Cell type" \
   --color-choices "Cell type|Cell type group|Cell type class|Present tissues" \
-  --filter-cols "Cell type class|Cell type group|Cell type|cluster_limit|Protein_Class|Present tissues" \
+  --filter-cols "Cell type class|Cell type group|Cell type|cluster_limit|Protein_Class" \
   --search-cols "Gene|Gene name|Present tissues" \
   --details "Gene|Gene name|Cell type|Cell type group|Cell type class|clusters_used|Enrichment score|log2_enrichment| specificity_tau |log2_enrichment_penalized|top_percent_Cell_type_count|top_percent_Cell_type_group_count|top_percent_Cell_type_class_count|overall_rank_by_Cell_type|overall_rank_by_Cell_type_group|overall_rank_by_Cell_type_class|rank_within_Cell_type|rank_within_Cell_type_group|rank_within_Cell_type_class|top_percent_Cell_types|top_percent_Cell_type_groups|top_percent_Cell_type_classes|Protein_Class|Present tissues" \
   --title "Celltype Enrichmnt V 2.1" \
