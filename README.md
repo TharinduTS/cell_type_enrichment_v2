@@ -2036,6 +2036,7 @@ misc:
 ```
 ## 6-IV Dropping rows closer to background noise
 
+```txt
 By comparing the enrichment values of known "Cell type specific (CTS)" genes, 
 
 I figured to match the "expression identification sensitivity" of other studies, 
@@ -2053,7 +2054,7 @@ In other words, I have 167 cell types. In enrichment calculation,
 •	So in simpler terms, if a certain gene is not expressed at least in a level close to 1% of the level of highly expressing genes for that cell type, that is not considered for the calculation to match the ‘sensitivity level’ of literature I found "Cell type specific (CTS)" genes from. 
 
 •	Then I also have other, drop-na, drop-negatives and top percentage filters I can use, even though it will not make a difference after the filtration step above.
-
+```
 # Filter
 
 Keeps the header, and only rows where log2_enrichment_penalized >= 0.5
