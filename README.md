@@ -1,4 +1,4 @@
-# Cell_Type_enrichment_V_2.1 
+# Cell_Type_enrichment_V_2.2
 
 This is an enhanced version of cell type enrichment script to identify cell type specific gene expression and cell type enriched gene expression
 
@@ -2037,7 +2037,14 @@ misc:
 ## 6-IV Dropping rows closer to background noise
 
 By comparing the enrichment values of known "Cell type specific (CTS)" genes, I figured to match the "expression identification sensitivity" of other studies, 
-I should not consider the rows with log2_enrichment_penalized value less than 4 (with expression values less than 16 times the background expression). Therefore I started by filtering those rows out
+I should not consider the rows with log2_enrichment_penalized value less than 4 (with expression values less than 16 times the background expression). Therefore, I started by filtering those rows out.
+
+In other words, I have a little over 160 cell types (167). In enrichment calculation,
+•	If the level of expression of a certain cell specific looking gene that expresses in a certain cell type is  X
+•	For the rest of the genes, this becomes background expression. If we consider the number of total cell types as 160 for the ease of calculation, background expression level by the highest expressing gene for that cell type becomes X/160
+•	The minimum level of expression another gene should have to appear significant to show up for that cell type (to be 16 times higher than the base level as I mentioned before) then becomes  (X/160) *16 10X
+•	So in simpler terms, if a certain gene is not expressed at least in a level close to 10% of the level of highly expressing genes for that cell type, that is not considered for the calculation to match the ‘sensitivity level’ of literature I found "Cell type specific (CTS)" genes from. 
+•	Then I also have other, drop-na, drop-negatives and top percentage filters I can use, even though it will not make a difference after the filtration step above.
 
 ```
 
@@ -3201,13 +3208,13 @@ A view of user interface
 
 4	Cluster limit – Lets you filter data based on how many clusters were used for the calculation. For now it lets you select all, one cluster or below and 2 clusters or above.
 
-5   Protein_Class - Lets you filter based on protein class
-
 ## 10-IV Search Bars
 
 1	Search in Gene – Lets you search genes by gene ID 
 
 2	Search in Gene name – Lets you search genes by gene name
+
+3   Search in Present tissues - Lets you search gene / cell type combinations by expressed tissue type
 
 ## 10-V Buttons
 
@@ -3265,6 +3272,8 @@ So basically, if a gene is  only expressed in one cell type, gene with a higher 
 21	top_percent_Cell_type_groups - cell type group/s the current gene is expressed in
 
 22	top_percent_Cell_type_classes - cell type class/es the current gene is expressed in
+
+23  Present tissues - Tissue(s) current gene / cell type combination shows expression in
 
 ## 10-VII Use cases
 
