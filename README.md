@@ -2037,19 +2037,24 @@ misc:
 ## 6-IV Dropping rows closer to background noise
 
 By comparing the enrichment values of known "Cell type specific (CTS)" genes, I figured to match the "expression identification sensitivity" of other studies, 
-I should not consider the rows with log2_enrichment_penalized value less than 4 (with expression values less than 16 times the background expression). Therefore, I started by filtering those rows out.
+I should not consider the rows with log2_enrichment_penalized value less than 2 (with expression values less than 4 times the background expression). Therefore, I started by filtering those rows out.
 
 In other words, I have a little over 160 cell types (167). In enrichment calculation,
-•	If the level of expression of a certain cell specific looking gene that expresses in a certain cell type is  X
-•	For the rest of the genes, this becomes background expression. If we consider the number of total cell types as 160 for the ease of calculation, background expression level by the highest expressing gene for that cell type becomes X/160
-•	The minimum level of expression another gene should have to appear significant to show up for that cell type (to be 16 times higher than the base level as I mentioned before) then becomes  (X/160) *16 10X
-•	So in simpler terms, if a certain gene is not expressed at least in a level close to 10% of the level of highly expressing genes for that cell type, that is not considered for the calculation to match the ‘sensitivity level’ of literature I found "Cell type specific (CTS)" genes from. 
+
+•	If the level of expression of a certain cell specific looking gene that expresses in a certain cell type is ==> X
+
+•	For the rest of the genes, this becomes background expression. If we consider the number of total cell types as 160 for the ease of calculation, background expression level by the highest expressing gene for that cell type becomes ==> X/160
+
+•	The minimum level of expression another gene should have (y) to appear significant to show up for that cell type (to be 4 times higher than the base level as I mentioned before) then becomes ==> (X/160) *4 = Y  ==> Y =X/40 (Approximately/not considering the expression of other genes)
+
+•	So in simpler terms, if a certain gene is not expressed at least in a level close to 2.5% of the level of highly expressing genes for that cell type, that is not considered for the calculation to match the ‘sensitivity level’ of literature I found "Cell type specific (CTS)" genes from. 
+
 •	Then I also have other, drop-na, drop-negatives and top percentage filters I can use, even though it will not make a difference after the filtration step above.
 
 ```
 
-# Keeps the header, and only rows where log2_enrichment_penalized >= 4
-awk -F'\t' 'NR==1 {print; next} { if ($11+0 >= 4) print }' enrich_values_with_cell_class_data.tsv > enrich_values_with_cell_class_data_filtered.tsv
+# Keeps the header, and only rows where log2_enrichment_penalized >= 2
+awk -F'\t' 'NR==1 {print; next} { if ($11+0 >= 2) print }' enrich_values_with_cell_class_data.tsv > enrich_values_with_cell_class_data_filtered.tsv
 ```
 This gave me a file with more than 22k lines
 
