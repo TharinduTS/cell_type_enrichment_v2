@@ -2054,10 +2054,9 @@ In other words, I have 167 cell types. In enrichment calculation,
 
 •	Then I also have other, drop-na, drop-negatives and top percentage filters I can use, even though it will not make a difference after the filtration step above.
 
+# Keeps the header, and only rows where log2_enrichment_penalized >= 0.5
 ```
-
-# Keeps the header, and only rows where log2_enrichment_penalized >= 2
-awk -F'\t' 'NR==1 {print; next} { if ($11+0 >= 2) print }' enrich_values_with_cell_class_data.tsv > enrich_values_with_cell_class_data_filtered.tsv
+awk -F'\t' 'NR==1 {print; next} { if ($11+0 >= 0.5) print }' enrich_values_with_cell_class_data.tsv > enrich_values_with_cell_class_data_filtered.tsv
 ```
 This gave me a file with more than 22k lines
 
