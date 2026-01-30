@@ -2036,7 +2036,10 @@ misc:
 ```
 ## 6-IV Dropping rows closer to background noise
 
-By comparing the enrichment values of known "Cell type specific (CTS)" genes, I figured to match the "expression identification sensitivity" of other studies, 
+By comparing the enrichment values of known "Cell type specific (CTS)" genes, 
+
+I figured to match the "expression identification sensitivity" of other studies, 
+
 I should not consider the rows with log2_enrichment_penalized value less than 2 (with expression values less than 4 times the background expression). Therefore, I started by filtering those rows out.
 
 In other words, I have a little over 160 cell types (167). In enrichment calculation,
