@@ -11,6 +11,8 @@ You can find them in
 https://www.proteinatlas.org/humanproteome/single+cell/single+cell+type/data
 ```
 
+# Pre-preparation - setting up python environment
+
 #*First of all, you should install needed python packages and load them*
 
 I have done this and I load needed packages in alliancecan like following
