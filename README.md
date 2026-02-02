@@ -3152,14 +3152,14 @@ python universal_plot_maker_plus.py \
   --self-contained \
   --lang en
 ```
-### Top 30k rows - For all important data points
+### Top 50k rows - For all important data points
 
 *This also takes not putting too much stress on the browser and keeping it easily usable without lag into account*
 
 ```bash
 python universal_plot_maker_plus.py \
-  --file top_30k_from_final_data.tsv \
-  --out Celltype_Enrichment_V2_2_top_30k.html \
+  --file top_50k_from_final_data.tsv \
+  --out Celltype_Enrichment_V2_2_top_50k.html \
   --plot-type bar \
   --x-choices "Gene name | Gene" \
   --y-choices "Enrichment score|log2_enrichment| specificity_tau | Enrichment score (tau penalized)|log2_enrichment_penalized" \
