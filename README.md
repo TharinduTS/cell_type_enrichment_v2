@@ -3449,11 +3449,31 @@ I am going to use the same enrichment calculation script I used in chapter 3, bu
 
 I started by copying my filtered data file and enrichment calcualtion script to a new directory.
 
+Then First I fused Tissue and Cell type columns because I need both those data layers considered when I decide categories for enrichment calculation
 
+```
+awk -F'\t' 'BEGIN{OFS="\t"} NR==1{print $0,"Tissue:CellType"} NR>1{print $0,$1":"$5}' combined_expression_data_filtered.tsv > combined_expression_data_with_tissue_celltype_fused.tsv
+```
+Then I calculated enrichment values with this newly fused column for tissue:cell type combinations
 
+```
+./run_celltype_enrichment_v1_4.sh --input-file combined_expression_data_with_tissue_celltype_fused.tsv --output-file enrichment_values_for_tissue_types.tsv --min-clusters 1 --min-count 50 --specificity-mode penalize --min-specificity 1 --cell-type-col "Tissue:CellType"  --batch-col "Tissue:CellType"
+```
 
+Note how I added two new commands here 
+```
+--cell-type-col "Tissue:CellType"  --batch-col "Tissue:CellType"
+```
+defining which column should be used for grouping
 
+This gives me enrichment values for Tissue:cellType combinations like following
 
+*Note that the progress messages given by this script can be confusing now as this script was written calculating enrichment values for cell types in mind.Cell types now mean Tissue:CellType combinations*
+```txt
+Gene    Gene name       Tissue:CellType avg_nCPM        weight_sum      clusters_used   specificity_tau Enrichment score        log2_enrichment Enrichment score (tau penalized)        log2_enrichment_penalized       single_cell_type_gene
+ENSG00000167531 LALBA   breast:breast lactating cells   483428.6        420     1       0.9999997849673347      4606146.319293296       22.135128809974248      4606145.328821376       22.135128499747655      False
+ENSG00000135222 CSN2    breast:breast lactating cells   333043.0        420     1       0.9999991703984089      1201050.8623900507      20.195865817257094      1201049.8659963442      20.1958646203945        False
+```
 
 
 
