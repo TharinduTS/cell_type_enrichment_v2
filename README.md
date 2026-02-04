@@ -3437,6 +3437,18 @@ Predicted secreted proteins
 According to HPA (https://www.proteinatlas.org/humanproteome/tissue/secretome#classification_of_the_secretome), The human secretome comprises all proteins that are potentially secreted from the cell.
 
 
+# 11) Adding tissue expression profile
+
+## 11-I Introduction
+
+In addition to having all the information layers above, it would be nice to see how these genes with cell type biased expression are expressed in different tissue types. Therefore I am trying to extract and add this data layer and visualize that in the same page, but without disturbing the original clean layout.
+
+## 11-II Tissue expression layer
+
+I am going to use the same enrichment calculation script I used in chapter 3, but this time with tissue data layer.
+
+I started by copying my filtered data file and enrichment calcualtion script to a new directory.
+
 
 
 
