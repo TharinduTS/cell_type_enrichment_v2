@@ -3475,5 +3475,9 @@ ENSG00000167531 LALBA   breast:breast lactating cells   483428.6        420     
 ENSG00000135222 CSN2    breast:breast lactating cells   333043.0        420     1       0.9999991703984089      1201050.8623900507      20.195865817257094      1201049.8659963442      20.1958646203945        False
 ```
 
+And then I selected only the useful column for clarity
 
+```
+less enrichment_values_for_tissue_types.tsv | cut -f 1,2,3,6,11 > selected_tissue_expression_columns.tsv
+```
 
