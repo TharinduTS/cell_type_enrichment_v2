@@ -3752,6 +3752,14 @@ python3 add_enrichment_to_tissues.py \
   --tissue-sep "&" \
   --case-insensitive
 ```
+## 11-IV Select data to plot
+
+Just like I did in chapter 8, here I am selecting how many top data rows to plot, to avoid procssing complications
+
+```
+head -n 50000 Final_data_with_tissue_expression_data.tsv> top_50k_from_final_data.tsv
+```
+
 
 
 
