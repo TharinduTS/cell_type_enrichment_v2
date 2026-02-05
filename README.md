@@ -3505,6 +3505,19 @@ NR==1 {
 }
 ' selected_tissue_expression_columns.tsv> combined_expression_data_split.tsv
 ```
+### Merged cluster info into Tissue data
+
+```awk
+awk -F'\t' '
+BEGIN { OFS="\t" }
+NR==1 { print; next }
+{
+    $3 = $3 "-" $5
+    print
+}
+' combined_expression_data_split.tsv > combined_expression_data_split_with_clusters.tsv
+```
+
 ## 11-III Merge data
 
 Then I added this data to my main dataframe. To avoid further complicating the way this data is shown, I merged this data matching columns "Gene    Gene name Cell type" and looking for the Tissue inside the 'Present Tissues' column with following script
@@ -3744,7 +3757,7 @@ NOTES
 
 ```bash
 python3 add_enrichment_to_tissues.py \
-  --table1 combined_expression_data_split.tsv \
+  --table1 combined_expression_data_split_with_clusters.tsv \
   --table2 ranked_genes_cleaned_with_tissue_data.tsv \
   --output Final_data_with_tissue_expression_data.tsv \
   --missing-value "Not_high_enough" \
