@@ -3512,7 +3512,7 @@ awk -F'\t' '
 BEGIN { OFS="\t" }
 NR==1 { print; next }
 {
-    $3 = $3 "-" $5
+    $3 = $3 " with " $5
     print
 }
 ' combined_expression_data_split.tsv > combined_expression_data_split_with_clusters.tsv
@@ -3795,7 +3795,7 @@ python3 add_enrichment_to_tissues.py \
   --missing-value "Not_high_enough" \
   --value-sep ":" \
   --tissue-sep "&" \
-  --tissue1-trim-after "-" \
+  --tissue1-trim-after " with " \
   --label-source table1 \
   --case-insensitive
 ```
