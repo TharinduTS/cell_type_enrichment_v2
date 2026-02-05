@@ -3505,4 +3505,253 @@ NR==1 {
 }
 ' selected_tissue_expression_columns.tsv> combined_expression_data_split.tsv
 ```
+## 11-III Merge data
+
+Then I added this data to my main dataframe. To avoid further complicating the way this data is shown, I merged this data matching columns "Gene    Gene name Cell type" and looking for the Tissue inside the 'Present Tissues' column with following script
+
+### Script
+
+```py
+
+#!/usr/bin/env python3
+
+import argparse
+import pandas as pd
+import sys
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Propagate enrichment values from table1 into tissue strings in table2."
+    )
+
+    # I/O
+    parser.add_argument("--table1", required=True, help="TSV with Tissue and enrichment values")
+    parser.add_argument("--table2", required=True, help="TSV with Present tissues column")
+    parser.add_argument("--output", required=True, help="Output TSV")
+
+    # Join keys
+    parser.add_argument("--gene-col", default="Gene")
+    parser.add_argument("--gene-name-col", default="Gene name")
+    parser.add_argument("--cell-type-col", default="Cell type")
+
+    # Tissue + enrichment columns
+    parser.add_argument("--tissue-col-table1", default="Tissue",
+                        help="Column in table1 containing single tissue name")
+    parser.add_argument("--tissue-col-table2", default="Present tissues",
+                        help="Column in table2 containing delimited tissue names")
+    parser.add_argument("--enrichment-col", default="log2_enrichment_penalized",
+                        help="Column in table1 with the value to propagate")
+
+    # Formatting / behavior
+    parser.add_argument("--tissue-sep", default="&",
+                        help="Delimiter used between tissues in table2 (default: '&')")
+    parser.add_argument("--value-sep", default=":",
+                        help="Separator between value and tissue name (default: ':')")
+    parser.add_argument("--missing-value", default="NA",
+                        help="Value/string to use when a tissue has no match in table1")
+
+    parser.add_argument("--case-insensitive", action="store_true",
+                        help="Case-insensitive matching for keys (gene, gene name, cell type, tissue)")
+
+    parser.add_argument("--output-tissues-col", default=None,
+                        help="If provided, write the enriched tissues to this NEW column instead of "
+                             "overwriting the original tissue column")
+
+    return parser.parse_args()
+
+
+def norm(x, lower=False):
+    """Normalize scalars for matching: ensure string, strip whitespace, optionally lowercase."""
+    if pd.isna(x):
+        return ""
+    s = str(x).strip()
+    return s.lower() if lower else s
+
+
+def main():
+    args = parse_args()
+
+    # Load as strings; do not let pandas guess types
+    try:
+        t1 = pd.read_csv(args.table1, sep="\t", dtype=str, keep_default_na=False)
+        t2 = pd.read_csv(args.table2, sep="\t", dtype=str, keep_default_na=False)
+    except Exception as e:
+        print(f"[ERROR] Failed to read input TSV(s): {e}", file=sys.stderr)
+        sys.exit(1)
+
+    # Validate required columns exist
+    needed_t1 = {args.gene_col, args.gene_name_col, args.cell_type_col,
+                 args.tissue_col_table1, args.enrichment_col}
+    missing_t1 = [c for c in needed_t1 if c not in t1.columns]
+    if missing_t1:
+        print(f"[ERROR] Missing columns in table1: {missing_t1}", file=sys.stderr)
+        sys.exit(1)
+
+    needed_t2 = {args.gene_col, args.gene_name_col, args.cell_type_col, args.tissue_col_table2}
+    missing_t2 = [c for c in needed_t2 if c not in t2.columns]
+    if missing_t2:
+        print(f"[ERROR] Missing columns in table2: {missing_t2}", file=sys.stderr)
+        sys.exit(1)
+
+    # Whether to match case-insensitive
+    lower = args.case_insensitive
+
+    # Build lookup dict from table1
+    # Key: (gene, gene_name, cell_type, tissue) -> enrichment_value
+    lookup = {}
+    for _, row in t1.iterrows():
+        key = (
+            norm(row[args.gene_col], lower),
+            norm(row[args.gene_name_col], lower),
+            norm(row[args.cell_type_col], lower),
+            norm(row[args.tissue_col_table1], lower),
+        )
+        # last-one-wins if duplicates; could be extended to warn or aggregate
+        lookup[key] = norm(row[args.enrichment_col], lower=False)
+
+    # Prepare output column name
+    out_col = args.tissue_col_table2 if args.output_tissues_col is None else args.output_tissues_col
+
+    # Enrichment function for each row in table2
+    def enrich_row(row):
+        gene = norm(row[args.gene_col], lower)
+        gname = norm(row[args.gene_name_col], lower)
+        ctype = norm(row[args.cell_type_col], lower)
+
+        raw_tissues = row[args.tissue_col_table2]
+        if pd.isna(raw_tissues) or raw_tissues == "":
+            return raw_tissues  # nothing to do
+
+        # Split by the provided separator and trim spaces around each token
+        tissues = [t.strip() for t in str(raw_tissues).split(args.tissue_sep)]
+        enriched_parts = []
+
+        for t in tissues:
+            t_norm = norm(t, lower)
+            key = (gene, gname, ctype, t_norm)
+            value = lookup.get(key, args.missing_value)
+            # Compose "value<tissue-sep>tissue" using value-sep for internal pair
+            enriched_parts.append(f"{value}{args.value_sep}{t}")
+
+        # Re-join with the same spacing convention: " <sep> "
+        return f" {args.tissue_seP} ".join(enriched_parts)
+
+    # NOTE: fix accidental capitalization typo above (tissue_seP -> tissue_sep)
+    def enrich_row_safe(row):
+        gene = norm(row[args.gene_col], lower)
+        gname = norm(row[args.gene_name_col], lower)
+        ctype = norm(row[args.cell_type_col], lower)
+
+        raw_tissues = row[args.tissue_col_table2]
+        if pd.isna(raw_tissues) or raw_tissues == "":
+            return raw_tissues  # nothing to do
+
+        tissues = [t.strip() for t in str(raw_tissues).split(args.tissue_sep)]
+        enriched_parts = []
+        for t in tissues:
+            t_norm = norm(t, lower)
+            key = (gene, gname, ctype, t_norm)
+            value = lookup.get(key, args.missing_value)
+            enriched_parts.append(f"{value}{args.value_sep}{t}")
+        return f" {args.tissue_sep} ".join(enriched_parts)
+
+    # Compute enriched tissues
+    t2[out_col] = t2.apply(enrich_row_safe, axis=1)
+
+    # Write output
+    try:
+        t2.to_csv(args.output, sep="\t", index=False)
+    except Exception as e:
+        print(f"[ERROR] Failed to write output TSV: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
+```
+### CLI help
+```txt
+add_enrichment_to_tissues.py
+============================
+
+Propagate enrichment values from one TSV table into multi-tissue annotations
+in another TSV file.
+
+For each row in Table 2, the script:
+- Matches rows from Table 1 using: Gene, Gene name, and Cell type
+- Checks whether the Tissue from Table 1 appears inside the "Present tissues" column
+- Prepends the enrichment value to each tissue as: value:tissue
+- Assigns a user-defined value to tissues with no matching enrichment
+
+USAGE
+-----
+python3 add_enrichment_to_tissues.py \
+  --table1 TABLE1.tsv \
+  --table2 TABLE2.tsv \
+  --output OUTPUT.tsv \
+  [options]
+
+REQUIRED ARGUMENTS
+------------------
+--table1     TSV file containing tissue-specific enrichment values
+--table2     TSV file containing multi-tissue annotations
+--output     Output TSV file
+
+OPTIONAL ARGUMENTS
+------------------
+--gene-col                 Gene ID column (default: Gene)
+--gene-name-col            Gene name column (default: Gene name)
+--cell-type-col            Cell type column (default: Cell type)
+
+--tissue-col-table1        Tissue column in table1 (default: Tissue)
+--tissue-col-table2        Multi-tissue column in table2 (default: Present tissues)
+--enrichment-col           Value to propagate (default: log2_enrichment_penalized)
+
+--tissue-sep               Tissue delimiter (default: &)
+--value-sep                Separator between value and tissue (default: :)
+--missing-value            Value for tissues without enrichment (default: NA)
+
+--case-insensitive         Enable case-insensitive matching
+--output-tissues-col       Write enriched output to a new column instead of overwriting
+
+EXAMPLE
+-------
+python3 add_enrichment_to_tissues.py \
+  --table1 combined_expression_data_split.tsv \
+  --table2 ranked_genes_cleaned_with_tissue_data.tsv \
+  --output Final_data_with_tissue_expression_data.tsv \
+  --missing-value Not_high_enough \
+  --tissue-sep "&" \
+  --value-sep ":" \
+  --case-insensitive
+
+EXAMPLE TRANSFORMATION
+----------------------
+Input:
+  stomach & tongue & breast
+
+Output:
+  Not_high_enough:stomach & Not_high_enough:tongue & 22.13:breast
+
+NOTES
+-----
+- Every tissue always receives a value
+- Original row structure is preserved
+- Suitable for large TSV gene expression datasets
+```
+### Run command
+
+```bash
+python3 add_enrichment_to_tissues.py \
+  --table1 combined_expression_data_split.tsv \
+  --table2 ranked_genes_cleaned_with_tissue_data.tsv \
+  --output Final_data_with_tissue_expression_data.tsv \
+  --missing-value "Not_high_enough" \
+  --value-sep ":" \
+  --tissue-sep "&" \
+  --case-insensitive
+```
+
+
 
