@@ -3449,12 +3449,16 @@ I am going to use the same enrichment calculation script I used in chapter 3, bu
 
 I started by copying my filtered data file and enrichment calcualtion script to a new directory.
 
-Then First I fused Tissue and Cell type columns because I need both those data layers considered when I decide categories for enrichment calculation
+### First I fused Tissue and Cell type columns 
+
+because I need both those data layers considered when I decide categories for enrichment calculation
 
 ```
 awk -F'\t' 'BEGIN{OFS="\t"} NR==1{print $0,"Tissue:CellType"} NR>1{print $0,$1":"$5}' combined_expression_data_filtered.tsv > combined_expression_data_with_tissue_celltype_fused.tsv
 ```
-Then I calculated enrichment values with this newly fused column for tissue:cell type combinations
+### calculated enrichment values 
+
+with this newly fused column for tissue:cell type combinations
 
 ```
 ./run_celltype_enrichment_v1_4.sh --input-file combined_expression_data_with_tissue_celltype_fused.tsv --output-file enrichment_values_for_tissue_types.tsv --min-clusters 1 --min-count 50 --specificity-mode penalize --min-specificity 1 --cell-type-col "Tissue:CellType"  --batch-col "Tissue:CellType"
@@ -3475,9 +3479,30 @@ ENSG00000167531 LALBA   breast:breast lactating cells   483428.6        420     
 ENSG00000135222 CSN2    breast:breast lactating cells   333043.0        420     1       0.9999991703984089      1201050.8623900507      20.195865817257094      1201049.8659963442      20.1958646203945        False
 ```
 
-And then I selected only the useful column for clarity
+### selected only the useful column for clarity
 
 ```
 less enrichment_values_for_tissue_types.tsv | cut -f 1,2,3,6,11 > selected_tissue_expression_columns.tsv
+```
+
+### splitted this combined column 
+
+into 2 columns again for ease of data handling
+
+```
+awk -F'\t' '
+BEGIN { OFS="\t" }
+
+NR==1 {
+    # Print new header
+    print $1, $2, "Tissue", "Cell type", $4, $5
+    next
+}
+
+{
+    split($3, a, ":")
+    print $1, $2, a[1], a[2], $4, $5
+}
+' selected_tissue_expression_columns.tsv> combined_expression_data_split.tsv
 ```
 
