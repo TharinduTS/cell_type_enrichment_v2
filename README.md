@@ -3439,11 +3439,11 @@ According to HPA (https://www.proteinatlas.org/humanproteome/tissue/secretome#cl
 
 # 11) Adding tissue expression profile
 
-## 11-I Introduction
+## Introduction
 
 In addition to having all the information layers above, it would be nice to see how these genes with cell type biased expression are expressed in different tissue types. Therefore I am trying to extract and add this data layer and visualize that in the same page, but without disturbing the original clean layout.
 
-## 11-II Tissue expression layer
+## 11-I Tissue expression layer
 
 I am going to use the same enrichment calculation script I used in chapter 3, but this time with tissue data layer.
 
@@ -3518,7 +3518,7 @@ NR==1 { print; next }
 ' combined_expression_data_split.tsv > combined_expression_data_split_with_clusters.tsv
 ```
 
-## 11-III Merge data
+## 11-II Merge data
 
 Then I added this data to my main dataframe. To avoid further complicating the way this data is shown, I merged this data matching columns "Gene    Gene name Cell type" and looking for the Tissue inside the 'Present Tissues' column with following script
 
@@ -3799,14 +3799,65 @@ python3 add_enrichment_to_tissues.py \
   --label-source table1 \
   --case-insensitive
 ```
-## 11-IV Select data to plot
+## 11-III Select data to plot
 
 Just like I did in chapter 8, here I am selecting how many top data rows to plot, to avoid procssing complications
 
 ```
 head -n 50000 Final_data_with_tissue_expression_data.tsv> top_50k_from_final_data.tsv
 ```
+## 11-IV Making interactive plots
 
+Then I made interactive plots with subplots to show tissue expression profile with the improved version of universal_plot_maker to include sub plots.
+
+### script
+
+Updated universal_plot_maker_plus.py can be found here
+
+```
+https://github.com/TharinduTS/universal_plot_maker_plus_with_subplot/blob/main/README.md
+```
+### Run command
+
+I ran it with the selected data from before, with following command
+
+```bash
+python universal_plot_maker_plus.py \
+  --file top_50k_from_final_data.tsv \
+  --out Celltype_Enrichment_V2_2_top_50k.html \
+  --plot-type bar \
+  --x-choices "Gene name | Gene" \
+  --y-choices "Enrichment score|log2_enrichment| specificity_tau | Enrichment score (tau penalized)|log2_enrichment_penalized" \
+  --default-x "Gene name" \
+  --default-y "log2_enrichment_penalized" \
+  --color-col "Cell type" \
+  --color-choices "Cell type|Cell type group|Cell type class|Present tissues" \
+  --filter-cols "Cell type class|Cell type group|Cell type|cluster_limit|Protein_Class" \
+  --search-cols "Gene|Gene name|Present tissues" \
+  --details "Gene|Gene name|Cell type|Cell type group|Cell type class|clusters_used|Enrichment score|log2_enrichment| specificity_tau |log2_enrichment_penalized|top_percent_Cell_type_count|top_percent_Cell_type_group_count|top_percent_Cell_type_class_count|overall_rank_by_Cell_type|overall_rank_by_Cell_type_group|overall_rank_by_Cell_type_class|rank_within_Cell_type|rank_within_Cell_type_group|rank_within_Cell_type_class|top_percent_Cell_types|top_percent_Cell_type_groups|top_percent_Cell_type_classes|Protein_Class" \
+  --title "Celltype Enrichmnt V 2.2" \
+  --dup-policy overlay \
+  --sort-primary "overall_rank_by_Cell_type" \
+  --sort-primary-order asc \
+  --sort-secondary "log2_enrichment_penalized" \
+  --sort-secondary-order desc \
+  --initial-zoom 100 \
+  --self-contained \
+  --lang en \
+  --pt-enable \
+  --pt-col "Present tissues" \
+  --pt-title "Enrichment per present tissue" \
+  --pt-x-label "Tissue" \
+  --pt-y-label "log2 Enrichment Penalized" \
+  --pt-color "#2a9d8f" \
+  --pt-height 360 \
+  --pt-width auto \
+  --pt-rotate -35 \
+  --pt-container-id "present-tissues-plot" \
+  --pt-enable --pt-mode flow \
+  --pt-anchor "#rowDetails" --pt-position after \
+  --pt-offset-x -300 --pt-offset-y -10
+```
 
 
 
