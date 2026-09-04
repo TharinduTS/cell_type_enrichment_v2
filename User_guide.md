@@ -101,5 +101,12 @@ Following is a snapshot of Cell Type Enrichment V.2 interface
 
 24 Tissues - Tissue(s) current gene / cell type combination shows expression in
 
+## Use cases
+
+### Visualizing
+By Default, CellType Enrichment V2 loads with Gene name as X axis and Log2 Enrichment value penalized by specificity score as Y axis. I think this is a good starting point as log2_enrichment puts background level expression level on 0 and it is easier to interpret. With defaults set to overlay plots and Primary sort by overall rank by cell type. This plot puts genes that are only expressed in one cell type with highest enrichment score first. Then it plots gradually decreasing enrichment values: still for genes that are only expressed in one cell type (see figure below).
+
+
+
 
 
