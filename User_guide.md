@@ -108,6 +108,32 @@ By Default, CellType Enrichment V2 loads with Gene name as X axis and Log2 Enric
 
 <img width="1337" height="427" alt="initial_plot_image" src="https://github.com/user-attachments/assets/0288e100-ee2c-4690-b2f5-5cf3ae3dac3d" />
 
+### Overall gene ranking
+If you keep scrolling right, then it starts plotting genes that are expressed in two cell types, but highly biased to one cell type. And then genes expressed in two cell types, with a lesser expression bias to one cell type and so on. Different colors represent different cell types here. Figure 4 below shows transition from genes that express in only one cell type to two cell types.
+
+<img width="1281" height="365" alt="scrolled_look" src="https://github.com/user-attachments/assets/889c10bf-5e22-45ed-8c0b-95519428128f" />
+
+### Filtering
+Filtering Menus gives you the values sorted according to sort columns just like before, but for individual cell type class, cell type group and cell type
+
+### Downloading
+#NOTE #When you download rows based on a order number, make sure you have selected separate as duplicate policy so the overlay/stacked plots for the same gene do not confuse you
+
+This script gives you multiple ways to select and download data with ‘Export TSV’ button.
+
+#### Normal download
+On the normal view, you can just select and download data for any selection with the tools baked into the plot viewer.
+
+#### A specific number of data points.
+Entering a value in the box ‘Bars to show’ lets you select a specific number of data points in the current view and download that number of data points.
+
+#### Sorted data points and top values
+In addition to these, you can use sort and filter menus to select your download.
+
+As an example, if you want to download the top values for each cell type, you can set the Primary sort to ‘rank_within_celltype’. This brings all the no 1 ranked genes for each cell type to the top.
+
+Then you can use secondary sort as ‘cell type’
+
 
 
 
