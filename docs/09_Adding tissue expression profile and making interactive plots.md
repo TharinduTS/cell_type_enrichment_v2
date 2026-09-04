@@ -1,6 +1,6 @@
 # 9) Adding tissue expression profile
 
-Introduction
+Introduction:
 In addition to having all the information layers above, it would be nice to see how these genes with cell type biased expression are expressed in different tissue types. Therefore I am trying to extract and add this data layer and visualize that in the same page, but without disturbing the original clean layout.
 
 9-I Tissue expression layer
