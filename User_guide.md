@@ -2,8 +2,6 @@
 
 ## User interface
 
-<<<<<<< HEAD
-./../
 =======
 Following is a snapshot of Cell Type Enrichment V.2 interface
 
@@ -38,5 +36,4 @@ Following is a snapshot of Cell Type Enrichment V.2 interface
 
 4 Cluster limit – Lets you filter data based on how many clusters were used for the calculation. Currently, it lets you select all, one cluster or below and 2 clusters or above.
 
->>>>>>> 5ba0b131f2b7bb67402573f9ed7395d5907290cd
 
