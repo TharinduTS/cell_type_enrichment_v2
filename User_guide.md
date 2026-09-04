@@ -108,6 +108,13 @@ By Default, CellType Enrichment V2 loads with Gene name as X axis and Log2 Enric
 
 <img width="1337" height="427" alt="initial_plot_image" src="https://github.com/user-attachments/assets/0288e100-ee2c-4690-b2f5-5cf3ae3dac3d" />
 
+#### Tissue specific expression subplot
+
+Once you click a bar representing a gene, this will automatically open a subplot on the side, showing how the expression of that gene changes in different tissue types.
+
+<img width="365" height="312" alt="tissue plot" src="https://github.com/user-attachments/assets/4375e244-942e-4fb7-aa39-1642ab3cfa45" />
+
+
 ### Overall gene ranking
 If you keep scrolling right, then it starts plotting genes that are expressed in two cell types, but highly biased to one cell type. And then genes expressed in two cell types, with a lesser expression bias to one cell type and so on. Different colors represent different cell types here. Figure 4 below shows transition from genes that express in only one cell type to two cell types.
 
@@ -134,7 +141,11 @@ As an example, if you want to download the top values for each cell type, you ca
 
 Then you can use secondary sort as ‘cell type’
 
+## App Walkthrough
+In addition to all the features I had explained in my previous version, following are a few of the new, interesting features I thought worth noting. In this section, I try to explain these with examples.
 
+### Ranking by cell type groups and cell type classes
+In addition to the default loading setting: genes ranked by cell type specificity, now this supports genes ranked by cell type groups and classes. As an example, most germ cells do not make it to the top of the list when you are in the default ‘overall rank by cell type’ setting as they are expressed in multiple cell types that are closely related. But if you change it to ‘overall rank by cell type group’, this does not push a gene back for being present in multiple cell types- if they are closely related (See figure : Gene SPEM2).
 
 
 
