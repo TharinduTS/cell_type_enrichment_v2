@@ -97,7 +97,9 @@ Following is a snapshot of Cell Type Enrichment V.2 interface
 
 22 top_percent_Cell_type_classes - cell type class/es the current gene is expressed in
 
-23 Present tissues - Tissue(s) current gene / cell type combination shows expression in
+23 Protein class - Any predicted protein classes
+
+24 Tissues - Tissue(s) current gene / cell type combination shows expression in
 
 
 
