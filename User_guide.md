@@ -25,3 +25,14 @@ Following is a snapshot of Cell Type Enrichment V.2 interface
 8 Secondary sort- This is used as a tie breaker. When primary sort has the same value for two or more rows, you can use this to decide the sort order.
 
 9 Asc and desc menus- For each sort menus, you can select whether they should be sorted in ascending or descending order. If the column is numeric, these sorts based on value. If the column is string, then it is A-Z or Z-A
+
+### 2) Filter Menus
+1 Cell type class- Lets you filter data by cell type class
+
+2 Cell type group - Lets you filter data by cell type group
+
+3 Cell type - Lets you filter data by cell type
+
+4 Cluster limit – Lets you filter data based on how many clusters were used for the calculation. Currently, it lets you select all, one cluster or below and 2 clusters or above.
+
+
