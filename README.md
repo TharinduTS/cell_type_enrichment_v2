@@ -1,6 +1,9 @@
 # ***Cell_Type_enrichment_V_2.2***
 
-This is an enhanced version of cell type enrichment script to identify cell type specific gene expression and cell type enriched gene expression
+This is a pipeline I wrote to identify cell type specific gene expression and cell type enriched gene expression creating a tool to visualize and compare the end results, starting from raw expression data.
+It also has information on tissue specificity of the same gene-cell type combinations.
+
+(I have the equivalent tool for tissue specific gene expression under the project tissue type enrichment)
 
 ### This pipeline mainly uses python and produces an output tool as a HTML page (hence github sees this as mainly HTML)
 
