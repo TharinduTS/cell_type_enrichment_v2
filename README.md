@@ -4,7 +4,7 @@ This is an enhanced version of cell type enrichment script to identify cell type
 
 ### Directory structure
 
-1 ./scripts - contains all the scripts used in the pipeline
+1) ./scripts - contains all the scripts used in the pipeline
 2 ./docs	- contains help files for each script following the script names
 3 ./downloads	- Contains a couple versions of the output html page/ tool for downloading
 4 ./user_guide	- contains instructions and explanations on cell type enrichment user interface
