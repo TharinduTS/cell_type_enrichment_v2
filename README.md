@@ -2,6 +2,8 @@
 
 This is an enhanced version of cell type enrichment script to identify cell type specific gene expression and cell type enriched gene expression
 
+This pipeline mainly uses python and produces output tool as a HTML page (hence github sees this as mainly HTML)
+
 ### Directory structure
 
 1) /scripts - contains all the scripts used in the pipeline
