@@ -2,6 +2,13 @@
 
 This is an enhanced version of cell type enrichment script to identify cell type specific gene expression and cell type enriched gene expression
 
+### Directory structure
+
+1) /scripts - contains all the scripts used in the pipeline
+2) /docs	- contains help files for each script following the script names
+3) /downloads	- Contains a couple versions of the output html page/ tool for downloading
+4) /user_guide	- contains instructions and explanations on cell type enrichment user interface
+
 This pipeline uses publically available data.
 
 I use the datasets from Human protein Atlas as they have a extensive dataset they create by combinitng multiple studies
@@ -10,6 +17,7 @@ You can find them in
 ```url
 https://www.proteinatlas.org/humanproteome/single+cell/single+cell+type/data
 ```
+
 
 # I) Pre-preparation - setting up python environment
 
@@ -59,6 +67,23 @@ adipose tissue  c-0     mesothelial cells       mesothelial cells       speciali
 adipose tissue  c-1     adipocytes      mature adipocytes       mesenchymal cells       6996    yes     high
 adipose tissue  c-2     adipocytes      mature adipocytes       mesenchymal cells       6993    yes     high
 ```
+
+
+# Explaining the pipeline
+
+From this step onwards, I have designed this workflow in 10 chapters, starting from raw, publicly available data -> all the way to the interactive output. All the scripts needed can be found in "./scripts" directory and each of the script is accompanied by a help file with the same name inside the directory "./docs". All the scripts are written as modules so the users can use custom datasets to achieve comparable results. 
+
+
+
+Rest of this readme file is a collection of all the help (md) files for all the scripts for better flow, but with a continuous format
+
+*************************************************************************************************************************************
+END OF INTRODUCTION
+*************************************************************************************************************************************
+
+
+
+
 
 ## 1-II Merge script
 Because I need cell count data for my analysis, I start by combining these dataframes to add columns "Cell count" , "Included in aggregation", "Annotation reliability" from rna_single_cell_clusters.tsv to rna_single_cell_cluster.tsv matching by Cluster.

@@ -1,3 +1,7 @@
+## Merge script
+Because I need cell count data for my analysis, I start by combining these dataframes to add columns "Cell count" , "Included in aggregation", "Annotation reliability" from rna_single_cell_clusters.tsv to rna_single_cell_cluster.tsv matching by Cluster.
+I did this with merge_tsv_by_keys.py
+
 Merge Script CLI help
 
 #************** NOTE ************************************
