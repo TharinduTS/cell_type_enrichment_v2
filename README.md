@@ -64,6 +64,13 @@ adipose tissue  c-2     adipocytes      mature adipocytes       mesenchymal cell
 Because I need cell count data for my analysis, I start by combining these dataframes to add columns "Cell count" , "Included in aggregation", "Annotation reliability" from rna_single_cell_clusters.tsv to rna_single_cell_cluster.tsv matching by Cluster.
 I did this with merge_tsv_by_keys.py
 
+
+# Note explaining the pipeline
+
+From this step onwards, I have designed this workflow in 10 chapters, starting from raw, publicly available data -> all the way to the interactive output. All the scripts needed can be found in "./scripts" directory and each of the script is accompanied by a help file with the same name inside the directory "./docs". All the scripts are written as modules so the users can use custom datasets to achieve comparable results. 
+
+
+
 merge_tsv_by_keys.py
 ```py
 
