@@ -5,8 +5,7 @@ It also has information on tissue specificity of the same gene-cell type combina
 
 (I have the equivalent tool for tissue specific gene expression under the project tissue type enrichment)
 
-### This pipeline mainly uses python and produces an output tool as a HTML page (hence github sees this as mainly HTML)
-
+### This pipeline mainly uses python and produces an output tool as a HTML page 
 ### Directory structure
 
 1) /scripts - contains all the scripts used in the pipeline
